@@ -1,0 +1,833 @@
+import flet as ft
+import supabase_db as db
+import qr_utils
+import threading
+import time as _time
+from datetime import datetime
+#import cv2
+#from pyzbar.pyzbar import decode
+import uuid
+import math
+
+def main(page: ft.Page):
+    page.title = "Учёт посещаемости"
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.padding = 0
+        # Проверяем, есть ли уже ID у этого устройства, если нет - создаем
+    device_id = page.client_storage.get("my_device_id")
+    if not device_id:
+        
+        device_id = str(uuid.uuid4())
+        page.client_storage.set("my_device_id", device_id)
+
+    state = {"user": None, "view": "login"}
+    root = ft.Container(expand=True)
+
+    # ==========================================================
+    # ЭКРАН ВХОДА
+    # ==========================================================
+    def build_login():
+        email_field = ft.TextField(label="Email", width=320)
+        password_field = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=320)
+        error_text = ft.Text("", color=ft.Colors.RED)
+
+        def on_login(e):
+            error_text.value = ""
+            if not email_field.value or not password_field.value:
+                error_text.value = "Заполни все поля"
+                page.update()
+                return
+            
+            success, msg = db.sign_in(email_field.value, password_field.value)
+            if success:
+                profile = db.get_profile()
+                
+                # ЛОГИКА ПРИВЯЗКИ УСТРОЙСТВА
+                saved_device = db.get_user_device_id(profile["id"])
+                
+                if saved_device is None:
+                    # Первый вход - привязываем этот телефон
+                    db.bind_device(profile["id"], device_id)
+                    state["user"] = profile
+                    render()
+                elif saved_device == device_id:
+                    # Телефон совпадает - пускаем
+                    state["user"] = profile
+                    render()
+                else:
+                    # Телефон ДРУГОЙ - блокируем!
+                    db.sign_out() # выкидываем из сессии Supabase
+                    error_text.value = "❌ Вход заблокирован: аккаунт привязан к другому устройству!"
+                    error_text.color = ft.Colors.RED
+                    page.update()
+            else:
+                error_text.value = "Неверный email или пароль"
+                page.update()
+
+        def goto_register(e):
+            state["view"] = "register"
+            render()
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("Вход", size=32, weight=ft.FontWeight.BOLD),
+                email_field, password_field, error_text,
+                ft.ElevatedButton("Войти", width=320, on_click=on_login),
+                ft.TextButton("Ещё нет аккаунта? Зарегистрироваться", on_click=goto_register),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            alignment=ft.alignment.center, expand=True, padding=30,
+        )
+
+    # ==========================================================
+    # ЭКРАН РЕГИСТРАЦИИ
+    # ==========================================================
+    # ==========================================================
+    # ЭКРАН РЕГИСТРАЦИИ
+    # ==========================================================
+    def build_register():
+        email_field = ft.TextField(label="Email", width=400)
+        password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, width=400)
+        
+        role_dropdown = ft.Dropdown(
+            label="Кто вы?", width=400, value="student",
+            options=[
+                ft.dropdown.Option(key="student", text="Студент"),
+                ft.dropdown.Option(key="teacher", text="Преподаватель"),
+            ])
+        
+        # Поля для студента
+        group_dd = ft.Dropdown(label="Выберите группу", width=400)
+        student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
+        code_field = ft.TextField(label="Персональный код (из деканата)", width=400)
+        code_field.visible = False
+        
+        # Загружаем группы из реестра
+        for g in db.get_registry_groups():
+            group_dd.options.append(ft.dropdown.Option(key=g, text=g))
+            
+        student_container = ft.Column([group_dd, student_dd, code_field], spacing=10)
+        
+        # Поле ФИО для преподавателей (вводится вручную)
+        full_name_field = ft.TextField(label="ФИО", width=400)
+        full_name_field.visible = False
+
+        def on_role_change(e):
+            is_student = (role_dropdown.value == "student")
+            student_container.visible = is_student
+            full_name_field.visible = not is_student
+            page.update()
+        role_dropdown.on_change = on_role_change
+
+        def on_group_change(e):
+            # Когда выбрали группу, загружаем студентов
+            student_dd.options.clear()
+            student_dd.value = None
+            code_field.value = ""
+            code_field.visible = False
+            if group_dd.value:
+                students = db.get_registry_students(group_dd.value)
+                for s in students:
+                    student_dd.options.append(ft.dropdown.Option(key=s["id"], text=s["full_name"]))
+            page.update()
+        group_dd.on_change = on_group_change
+        
+        def on_student_change(e):
+            # Показываем поле для кода, только если выбран студент
+            code_field.visible = bool(student_dd.value)
+            page.update()
+        student_dd.on_change = on_student_change
+
+        error_text = ft.Text("", color=ft.Colors.RED)
+
+        def on_register(e):
+            error_text.value = ""
+            email = (email_field.value or "").strip()
+            password = password_field.value or ""
+            role = role_dropdown.value
+
+            if not email or not password:
+                error_text.value = "Заполни Email и пароль"
+                page.update()
+                return
+            
+            if role == "student":
+                if not group_dd.value or not student_dd.value or not code_field.value:
+                    error_text.value = "Выбери группу, ФИО и введи код"
+                    page.update()
+                    return
+                
+                # 1. Создаем аккаунт в Supabase Auth (пока без ФИО)
+                success, result = db.sign_up(email, password, "", role, None)
+                if not success:
+                    # Если ошибка на английском, переводим на русский
+                    if "User already registered" in str(result):
+                        error_text.value = "Эта почта уже зарегистрирована. Войдите или используйте другой email."
+                    else:
+                        error_text.value = f"Ошибка: {result}"
+                    page.update()
+                    return
+                
+                new_user_id = result 
+                
+                # 2. Проверяем код и привязываем к реестру
+                ok, msg = db.verify_and_bind_student(student_dd.value, code_field.value.upper(), new_user_id)
+                if not ok:
+                    error_text.value = msg
+                    page.update()
+                    return
+                
+                # 3. Достаем ФИО из реестра, чтобы записать в профиль
+                # (Нам нужно получить ФИО по ID реестра)
+                # Для простоты пока берем текст из выпадающего списка
+                # (В идеале нужно сделать запрос к students_registry по ID)
+                import supabase_db
+                reg_data = supabase_db.supabase.table("students_registry").select("full_name").eq("id", student_dd.value).execute()
+                real_name = reg_data.data[0]["full_name"]
+                
+                # 4. Обновляем профиль в users (ФИО и группа)
+                grp_id = db.get_group_id_by_name(group_dd.value)
+                supabase_db.supabase.table("users").update({
+                    "full_name": real_name,
+                    "group_id": grp_id
+                }).eq("id", new_user_id).execute()
+
+                # Автоматический вход
+                db.sign_in(email, password)
+                state["user"] = db.get_profile()
+                render()
+            
+            else:
+                # Для преподавателя
+                f_name = (full_name_field.value or "").strip()
+                if not f_name:
+                    error_text.value = "Введи ФИО"
+                    page.update()
+                    return
+                success, result = db.sign_up(email, password, f_name, role, None)
+                if success:
+                    db.sign_in(email, password)
+                    state["user"] = db.get_profile()
+                    render()
+                else:
+                    error_text.value = f"Ошибка: {result}"
+                    page.update()
+
+        def goto_login(e):
+            state["view"] = "login"
+            render()
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("Регистрация", size=32, weight=ft.FontWeight.BOLD),
+                email_field, password_field, role_dropdown, 
+                full_name_field,
+                student_container,
+                error_text,
+                ft.ElevatedButton("Зарегистрироваться", width=400, on_click=on_register),
+                ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            alignment=ft.alignment.center, expand=True, padding=30,
+        )
+
+    # ==========================================================
+    # ПРИЛОЖЕНИЕ АДМИНИСТРАТОРА (Офис регистратора)
+    # ==========================================================
+    def build_admin_app():
+        user = state["user"]
+        
+        search_field = ft.TextField(label="Поиск по ФИО", width=400, hint_text="Введите имя...")
+        students_list = ft.Column(spacing=10)
+
+        def refresh_students(e=None):
+            students_list.controls.clear()
+            query = search_field.value.strip() if search_field.value else ""
+            students = db.get_all_students_for_admin(query)
+            
+            if not students:
+                students_list.controls.append(ft.Text("Студенты не найдены.", italic=True, color=ft.Colors.GREY))
+                page.update()
+                return
+
+            for s in students:
+                # Формируем текст со статусом телефона
+                device_status = "✅ Привязан" if s.get("device_id") else "❌ Не привязан"
+                reset_count = s.get("device_reset_count", 0)
+                group_name = s["groups"]["name"] if s.get("groups") else "Нет группы"
+                
+                # Если сбрасывали, подсвечиваем красным
+                count_text = f"⚠️ Сбросов: {reset_count}" if reset_count > 0 else "Сбросов: 0"
+                count_color = ft.Colors.RED if reset_count > 0 else ft.Colors.GREY
+
+                def make_reset_handler(sid):
+                    def reset_dev(e):
+                        if db.reset_student_device(sid):
+                            # Показываем уведомление (snackbar)
+                            page.show_snack_bar(ft.SnackBar(ft.Text("Устройство успешно сброшено!"), bgcolor=ft.Colors.GREEN))
+                            refresh_students()
+                    return reset_dev
+
+                students_list.controls.append(
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Icon(ft.Icons.PERSON),
+                                ft.Text(s["full_name"], weight=ft.FontWeight.BOLD, size=16, expand=True),
+                                ft.Text(f"({group_name})", color=ft.Colors.GREY, size=14),
+                            ]),
+                            ft.Row([
+                                ft.Text(f"Email: {s['email']}", size=12),
+                                ft.Text(f"| Телефон: {device_status}", size=12),
+                                ft.Text(f"| {count_text}", size=12, color=count_color),
+                                ft.ElevatedButton(
+                                    "🔄 Сбросить телефон", 
+                                    on_click=make_reset_handler(s["id"]),
+                                    style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_100, color=ft.Colors.ORANGE_900)
+                                )
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                        ]),
+                        padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8,
+                        border=ft.border.all(1, ft.Colors.BLUE_200)
+                    )
+                )
+            page.update()
+
+        search_field.on_change = refresh_students
+        
+        def logout(e):
+            db.sign_out()
+            state["user"] = None
+            state["view"] = "login"
+            render()
+
+        top_bar = ft.Container(
+            content=ft.Row([
+                ft.Text(f"👤 {user['email']} (Администратор)", color=ft.Colors.GREY, size=12),
+                ft.TextButton("Выйти", icon=ft.Icons.LOGOUT, on_click=logout),
+            ], alignment=ft.MainAxisAlignment.END),
+            padding=ft.padding.symmetric(5, 15), bgcolor=ft.Colors.GREY_100,
+        )
+
+        refresh_students()
+
+        return ft.Column([
+            top_bar,
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("🏛️ Панель Администратора", size=28, weight=ft.FontWeight.BOLD),
+                    ft.Text("Здесь вы можете управлять устройствами студентов.", color=ft.Colors.GREY),
+                    ft.Divider(),
+                    ft.Row([search_field, ft.IconButton(ft.Icons.REFRESH, on_click=refresh_students)]),
+                    students_list
+                ], spacing=15, scroll=ft.ScrollMode.AUTO),
+                padding=30, expand=True,
+            ),
+        ], expand=True, spacing=0)
+    # ==========================================================
+    # ПРИЛОЖЕНИЕ ПРЕПОДАВАТЕЛЯ
+    # ==========================================================
+    def build_teacher_app():
+        user = state["user"]
+        current_group_id = {"value": None}
+
+        home_screen = ft.Column([
+            ft.Text(f"🏠 Здравствуйте, {user['full_name']}!", size=26, weight=ft.FontWeight.BOLD),
+            ft.Text("Выберите раздел в меню слева."),
+        ], spacing=20)
+
+        # ---- ГРУППЫ ----
+        group_name_field = ft.TextField(label="Название группы", hint_text="ИС-21", width=300)
+        groups_list = ft.Column(spacing=10)
+
+        def refresh_groups():
+            groups_list.controls.clear()
+            groups = db.get_groups()
+            if not groups:
+                groups_list.controls.append(ft.Text("Нет групп. Добавь первую!", italic=True, color=ft.Colors.GREY))
+            else:
+                for g in groups:
+                    students = db.get_students(g["id"])
+                    groups_list.controls.append(ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.PEOPLE),
+                            ft.Text(g["name"], size=18, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"{len(students)} студ.", color=ft.Colors.GREY, size=13),
+                            ft.Icon(ft.Icons.CHEVRON_RIGHT),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8,
+                        on_click=lambda e, gid=g["id"], n=g["name"]: open_group(gid, n),
+                        ink=True))
+            page.update()
+
+        def on_add_group(e):
+            name = (group_name_field.value or "").strip()
+            if not name:
+                group_name_field.error_text = "Введи название"
+                page.update()
+                return
+            if db.add_group(name):
+                group_name_field.value = ""
+                group_name_field.error_text = None
+                refresh_groups()
+            else:
+                group_name_field.error_text = "Такая группа уже есть"
+                page.update()
+
+        groups_screen = ft.Column([
+            ft.Text("👥 Группы", size=28, weight=ft.FontWeight.BOLD),
+            ft.Row([group_name_field, ft.ElevatedButton("Добавить", icon=ft.Icons.ADD, on_click=on_add_group)], spacing=10),
+            ft.Divider(),
+            groups_list,
+        ], spacing=20, scroll=ft.ScrollMode.AUTO)
+
+        # ---- СТУДЕНТЫ (просмотр) ----
+        students_title = ft.Text("", size=28, weight=ft.FontWeight.BOLD)
+        students_list = ft.Column(spacing=10)
+
+        def refresh_students():
+            students_list.controls.clear()
+            gid = current_group_id["value"]
+            if gid is None:
+                page.update()
+                return
+            students = db.get_students(gid)
+            if not students:
+                students_list.controls.append(ft.Text("Нет зарегистрированных студентов.", italic=True, color=ft.Colors.GREY))
+            else:
+                for s in students:
+                    students_list.controls.append(ft.Container(
+                        content=ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(s["full_name"], size=16)]),
+                        padding=10, bgcolor=ft.Colors.GREEN_50, border_radius=8))
+            page.update()
+
+        students_screen = ft.Column([
+            ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: switch_screen(1)), students_title]),
+            ft.Text("Студенты, которые зарегистрировались в этой группе:", color=ft.Colors.GREY),
+            ft.Divider(),
+            students_list,
+        ], spacing=20, scroll=ft.ScrollMode.AUTO)
+
+        # ---- ЗАНЯТИЕ И QR ----
+        lesson_group_dd = ft.Dropdown(label="Группа", width=320, options=[])
+        lesson_status = ft.Text("", weight=ft.FontWeight.BOLD)
+        
+        qr_lesson_id = {"value": None}
+        qr_lesson_info = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        qr_image = ft.Image(src_base64="", width=320, height=320, fit=ft.ImageFit.CONTAIN)
+        qr_countdown = ft.Text("", size=14, color=ft.Colors.GREY)
+        qr_attendees_count = ft.Text("", size=15, weight=ft.FontWeight.BOLD)
+        qr_attendees_list = ft.Column(spacing=5)
+        qr_auto_thread = {"running": False}
+
+        def refresh_lesson_groups():
+            lesson_group_dd.options.clear()
+            for g in db.get_groups():
+                lesson_group_dd.options.append(ft.dropdown.Option(key=g["id"], text=g["name"]))
+            page.update()
+
+        def refresh_qr():
+            if qr_lesson_id["value"] is None: return
+            token = qr_utils.make_lesson_token(qr_lesson_id["value"])
+            b64 = qr_utils.make_qr_base64(token)
+            qr_image.src_base64 = b64
+            qr_countdown.value = f"⏱ Обновится через {qr_utils.seconds_remaining()} сек"
+            page.update()
+
+        def refresh_attendees():
+            qr_attendees_list.controls.clear()
+            if qr_lesson_id["value"] is None or not lesson_group_dd.value:
+                page.update()
+                return
+            all_students = db.get_students(lesson_group_dd.value)
+            present_ids = db.get_attendance(qr_lesson_id["value"])
+            
+            qr_attendees_count.value = f"✅ Отметились: {len(present_ids)} из {len(all_students)}"
+
+            if not present_ids:
+                qr_attendees_list.controls.append(ft.Text("Пока никто не отметился.", italic=True, color=ft.Colors.GREY, size=12))
+            else:
+                for sid in present_ids:
+                    name = next((s["full_name"] for s in all_students if s["id"] == sid), "—")
+                    qr_attendees_list.controls.append(ft.Row([
+                        ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=16),
+                        ft.Text(name, size=13),
+                    ], spacing=5))
+            page.update()
+
+        def start_qr_auto_refresh():
+            if qr_auto_thread["running"]: return
+            qr_auto_thread["running"] = True
+            def loop():
+                while qr_auto_thread["running"]:
+                    _time.sleep(10)
+                    if qr_lesson_id["value"] is None: break
+                    try:
+                        refresh_qr()
+                        refresh_attendees()
+                    except Exception as ex:
+                        print(f"err: {ex}"); break
+                qr_auto_thread["running"] = False
+            threading.Thread(target=loop, daemon=True).start()
+
+        def stop_qr_auto_refresh():
+            qr_auto_thread["running"] = False
+
+        def on_start_lesson(e):
+            lesson_status.value = ""
+            if not lesson_group_dd.value:
+                lesson_status.value = "Выбери группу"
+                lesson_status.color = ft.Colors.RED
+                page.update()
+                return
+            
+            # Берем координаты. На Windows GPS нет, поэтому подставим Экибастуз (для теста)
+            # В идеале здесь нужно использовать flet-geolocator
+            lat, lon = 51.723, 75.321  # Координаты Экибастуза (примерно)
+            
+            gid = lesson_group_dd.value
+            lid = db.start_lesson(gid, user["id"], lat, lon)
+            now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            
+            qr_lesson_id["value"] = lid
+            gname = next((g["name"] for g in db.get_groups() if g["id"] == gid), "")
+            qr_lesson_info.value = f"Группа: {gname} | Начато: {now_str}"
+            
+            switch_screen(5)
+            refresh_qr()
+            refresh_attendees()
+            start_qr_auto_refresh()
+
+        def on_mark_all(e):
+            if qr_lesson_id["value"] is None or not lesson_group_dd.value: return
+            students = db.get_students(lesson_group_dd.value)
+            db.mark_all_present(qr_lesson_id["value"], [s["id"] for s in students])
+            refresh_attendees()
+
+        def on_finish_lesson(e):
+            stop_qr_auto_refresh()
+            if qr_lesson_id["value"]:
+                db.finish_lesson(qr_lesson_id["value"])
+            qr_lesson_id["value"] = None
+            switch_screen(3)
+
+        lesson_screen = ft.Column([
+            ft.Text("📅 Занятие", size=28, weight=ft.FontWeight.BOLD),
+            ft.Text("Выбери группу. Дата и время проставятся автоматически.", color=ft.Colors.GREY),
+            ft.Divider(), ft.Row([lesson_group_dd]), ft.Container(height=10),
+            ft.ElevatedButton("▶  Начать занятие", icon=ft.Icons.PLAY_ARROW, on_click=on_start_lesson,
+                style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, padding=20), width=320),
+            lesson_status,
+        ], spacing=15, scroll=ft.ScrollMode.AUTO)
+
+        qr_screen = ft.Column([
+            ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: (stop_qr_auto_refresh(), switch_screen(3))),
+                    ft.Text("📱 QR-код занятия", size=26, weight=ft.FontWeight.BOLD)]),
+            qr_lesson_info, ft.Divider(),
+            ft.Container(content=qr_image, alignment=ft.alignment.center, padding=10),
+            ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), refresh_attendees()))], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Divider(), qr_attendees_count, qr_attendees_list, ft.Container(height=10),
+            ft.Row([
+                ft.ElevatedButton("✅ Отметить всех вручную", on_click=on_mark_all),
+                ft.ElevatedButton("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
+                                  style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE)),
+            ], spacing=10),
+        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+
+        # ---- СТАТИСТИКА (упрощена для облака) ----
+        # ---- СТАТИСТИКА ----
+        stats_group_dd = ft.Dropdown(label="Выберите группу", width=300, options=[])
+        stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        stats_list = ft.Column(spacing=8)
+
+        def refresh_stats_groups():
+            stats_group_dd.options.clear()
+            for g in db.get_groups():
+                stats_group_dd.options.append(ft.dropdown.Option(key=g["id"], text=g["name"]))
+            page.update()
+
+        def color_for(p):
+            if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
+            elif p >= 60: return ft.Colors.ORANGE, ft.Colors.ORANGE_50
+            return ft.Colors.RED, ft.Colors.RED_50
+
+        def refresh_stats(e=None):
+            stats_list.controls.clear()
+            stats_summary.value = ""
+            if not stats_group_dd.value:
+                page.update()
+                return
+            
+            stats, total_lessons = db.get_group_stats(stats_group_dd.value)
+            
+            if total_lessons == 0:
+                stats_summary.value = "⚠️ У группы ещё нет проведённых занятий"
+                stats_summary.color = ft.Colors.ORANGE
+                page.update()
+                return
+                
+            if not stats:
+                stats_summary.value = "В группе нет зарегистрированных студентов."
+                page.update()
+                return
+
+            total_present_all = sum(s["present"] for s in stats)
+            total_possible = total_lessons * len(stats)
+            group_percent = round(total_present_all / total_possible * 100, 1) if total_possible else 0
+
+            stats_summary.value = f"📊 По группе: {group_percent}% ({len(stats)} студ., {total_lessons} занятий)"
+            stats_summary.color = ft.Colors.BLUE_700
+
+            for s in stats:
+                p = s["percent"]
+                color, bg = color_for(p)
+                stats_list.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text(s["full_name"], expand=True, size=15),
+                        ft.Text(f"{s['present']} / {s['total']}", size=13, color=ft.Colors.GREY),
+                        ft.Container(content=ft.Text(f"{p}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
+                                     bgcolor=color, padding=ft.padding.symmetric(8, 12), border_radius=20),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10, bgcolor=bg, border_radius=8))
+            page.update()
+
+        stats_group_dd.on_change = refresh_stats
+
+        stats_screen = ft.Column([
+            ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD),
+            ft.Row([stats_group_dd, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_stats_groups(), refresh_stats()))], spacing=10),
+            stats_summary,
+            ft.Divider(),
+            stats_list,
+        ], spacing=15, scroll=ft.ScrollMode.AUTO)
+
+        # ---- СБОРКА ----
+        screens = [home_screen, groups_screen, students_screen, lesson_screen, stats_screen, qr_screen]
+        content_area = ft.Container(content=screens[0], padding=20, expand=True)
+
+        def switch_screen(index):
+            content_area.content = screens[index]
+            if index == 5:
+                page.update(); return
+            if index == 0: nav.selected_index = 0
+            elif index in (1, 2): nav.selected_index = 1
+            elif index == 3: nav.selected_index = 2; refresh_lesson_groups()
+            elif index == 4: 
+                nav.selected_index = 3
+                refresh_stats_groups()  # <-- ДОБАВИТЬ ЭТУ СТРОКУ
+                refresh_stats()         # <-- И ЭТУ
+            if index == 1: refresh_groups()
+            if index == 2: refresh_students()
+            page.update()
+
+        def on_nav(e):
+            switch_screen([0, 1, 3, 4][e.control.selected_index])
+
+        def open_group(gid, gname):
+            current_group_id["value"] = gid
+            students_title.value = f"👥 {gname}"
+            switch_screen(2)
+
+        def logout(e):
+            db.sign_out()
+            state["user"] = None
+            state["view"] = "login"
+            render()
+
+        nav = ft.NavigationRail(
+            selected_index=0, label_type=ft.NavigationRailLabelType.ALL, min_width=100,
+            destinations=[
+                ft.NavigationRailDestination(icon=ft.Icons.HOME_OUTLINED, selected_icon=ft.Icons.HOME, label="Главная"),
+                ft.NavigationRailDestination(icon=ft.Icons.PEOPLE_OUTLINED, selected_icon=ft.Icons.PEOPLE, label="Группы"),
+                ft.NavigationRailDestination(icon=ft.Icons.CALENDAR_MONTH_OUTLINED, selected_icon=ft.Icons.CALENDAR_MONTH, label="Занятие"),
+                ft.NavigationRailDestination(icon=ft.Icons.BAR_CHART_OUTLINED, selected_icon=ft.Icons.BAR_CHART, label="Статистика"),
+            ], on_change=on_nav,
+        )
+
+        refresh_groups()
+
+        top_bar = ft.Container(
+            content=ft.Row([
+                ft.Text(f"👤 {user['email']} ({user['role']})", color=ft.Colors.GREY, size=12),
+                ft.TextButton("Выйти", icon=ft.Icons.LOGOUT, on_click=logout),
+            ], alignment=ft.MainAxisAlignment.END),
+            padding=ft.padding.symmetric(5, 15), bgcolor=ft.Colors.GREY_100,
+        )
+
+        return ft.Column([
+            top_bar, ft.Row([nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0),
+        ], expand=True, spacing=0)
+
+    # ==========================================================
+    # ПРИЛОЖЕНИЕ СТУДЕНТА
+    # ==========================================================
+    def build_student_app():
+        user = state["user"]
+        att_list = ft.Column(spacing=8)
+        summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        status_msg = ft.Text("", color=ft.Colors.BLUE)
+
+        def refresh():
+            att_list.controls.clear()
+            rows = db.get_student_attendance(user["id"])
+            if not rows:
+                summary.value = "Занятий пока не было."
+                summary.color = ft.Colors.GREY
+                page.update()
+                return
+                
+            present = sum(1 for r in rows if r["status"] == "present")
+            total = len(rows)
+            p = round(present / total * 100, 1) if total else 0
+            summary.value = f"📊 Посещаемость: {p}% ({present} из {total})"
+            summary.color = ft.Colors.GREEN if p >= 80 else ft.Colors.ORANGE if p >= 60 else ft.Colors.RED
+
+            for r in rows:
+                date_str = r["lessons"]["created_at"][:16].replace("T", " ")
+                att_list.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN),
+                        ft.Text(f"{date_str}", weight=ft.FontWeight.BOLD),
+                    ]), padding=12, bgcolor=ft.Colors.GREY_100, border_radius=8))
+            page.update()
+
+        def scan_qr(e):
+            status_msg.value = "Сканер временно недоступен (в разработке)"
+            status_msg.color = ft.Colors.ORANGE
+            page.update()
+            return
+
+            def camera_thread():
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    status_msg.value = "Ошибка: камера не найдена"
+                    status_msg.color = ft.Colors.RED
+                    page.update()
+                    return
+
+                detected_lesson_id = None
+                qr_timestamp = "0"
+
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    decoded_objects = decode(frame)
+                    for obj in decoded_objects:
+                        qr_data = obj.data.decode("utf-8")
+                        parts = qr_data.split(":")
+                        detected_lesson_id = parts[0]
+                        qr_timestamp = parts[1] if len(parts) > 1 else "0"
+                        break
+                    
+                    cv2.imshow("Наведи камеру на QR-код (нажми 'q' для выхода)", frame)
+                    
+                    if detected_lesson_id or (cv2.waitKey(1) & 0xFF == ord('q')):
+                        break
+
+                cap.release()
+                cv2.destroyAllWindows()
+
+                if detected_lesson_id:
+                    status_msg.value = "QR распознан! Проверяю геолокацию..."
+                    page.update()
+                    
+                    # 1. Получаем координаты занятия (где начал препод)
+                    lesson_lat, lesson_lon = db.get_lesson_coords(detected_lesson_id)
+                    
+                    # 2. ИМИТАЦИЯ GPS СТУДЕНТА (для теста на компьютере)
+                    # Сейчас мы ставим координаты студента = координатам препода (расстояние 0, он рядом)
+                    student_lat, student_lon = lesson_lat, lesson_lon
+                    
+                    # Если захочешь проверить, как работает ОШИБКА (студент дома), 
+                    # удали строку выше и раскомментируй строку ниже:
+                    # student_lat, student_lon = 51.800, 75.400
+                    
+                    is_close = True
+                    if lesson_lat and lesson_lon and student_lat and student_lon:
+                        # Считаем расстояние по формуле Хаверсина
+                        R = 6371000 # Радиус Земли в метрах
+                        phi1, phi2 = math.radians(lesson_lat), math.radians(student_lat)
+                        dphi = math.radians(student_lat - lesson_lat)
+                        dlambda = math.radians(student_lon - lesson_lon)
+                        a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+                        distance = 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+                        
+                        # Если расстояние больше 70 метров - отказ
+                        if distance > 70:
+                            is_close = False
+
+                    if not is_close:
+                        status_msg.value = "❌ Вы находитесь слишком далеко от аудитории! (Отметка невозможна)"
+                        status_msg.color = ft.Colors.RED
+                        page.update()
+                        return
+                    
+                    status_msg.value = "Отмечаю..."
+                    page.update()
+                    success, msg = db.mark_student_present(detected_lesson_id, user["id"], qr_timestamp)
+                    if success:
+                        status_msg.value = "✅ " + msg
+                        status_msg.color = ft.Colors.GREEN
+                        refresh() # Обновляем список
+                    else:
+                        status_msg.value = "❌ Ошибка: " + msg
+                        status_msg.color = ft.Colors.RED
+                else:
+                    status_msg.value = "Сканирование отменено."
+                    status_msg.color = ft.Colors.GREY
+                page.update()
+
+            threading.Thread(target=camera_thread, daemon=True).start()
+
+        def logout(e):
+            db.sign_out()
+            state["user"] = None
+            state["view"] = "login"
+            render()
+
+        top_bar = ft.Container(
+            content=ft.Row([
+                ft.Text(f"👤 {user['email']}", color=ft.Colors.GREY, size=12),
+                ft.TextButton("Выйти", icon=ft.Icons.LOGOUT, on_click=logout),
+            ], alignment=ft.MainAxisAlignment.END),
+            padding=ft.padding.symmetric(5, 15), bgcolor=ft.Colors.GREY_100,
+        )
+
+        refresh()
+
+        return ft.Column([
+            top_bar,
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(f"👋 Здравствуйте, {user['full_name']}!", size=26, weight=ft.FontWeight.BOLD),
+                    ft.ElevatedButton("📷 Отметиться на занятии", icon=ft.Icons.QR_CODE_SCANNER, 
+                                      on_click=scan_qr, height=50),
+                    status_msg,
+                    ft.Divider(), 
+                    ft.Text("Моя посещаемость", size=20, weight=ft.FontWeight.BOLD),
+                    summary, att_list,
+                ], spacing=15, scroll=ft.ScrollMode.AUTO),
+                padding=30, expand=True,
+            ),
+        ], expand=True, spacing=0)
+
+    # ==========================================================
+    # ПЕРЕРИСОВКА
+    # ==========================================================
+    def render():
+        if state["user"] is None:
+            root.content = build_login() if state["view"] == "login" else build_register()
+        else:
+            role = state["user"]["role"]
+            if role == "admin":
+                root.content = build_admin_app()
+            elif role == "teacher":
+                root.content = build_teacher_app()
+            else:
+                root.content = build_student_app()
+        page.update()
+
+    page.add(root)
+    render()
+
+ft.app(target=main)
