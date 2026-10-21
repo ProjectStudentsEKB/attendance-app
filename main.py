@@ -68,7 +68,7 @@ async def main(page: ft.Page):
             content=ft.Column([
                 ft.Text("Вход", size=32, weight=ft.FontWeight.BOLD),
                 email_field, password_field, error_text,
-                ft.ElevatedButton("Войти", width=320, on_click=on_login),
+                ft.Button("Войти", width=320, on_click=on_login),
                 ft.TextButton("Ещё нет аккаунта? Зарегистрироваться", on_click=goto_register),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
@@ -198,7 +198,7 @@ async def main(page: ft.Page):
                 full_name_field,
                 student_container,
                 error_text,
-                ft.ElevatedButton("Зарегистрироваться", width=400, on_click=on_register),
+                ft.Button("Зарегистрироваться", width=400, on_click=on_register),
                 ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
@@ -256,7 +256,7 @@ async def main(page: ft.Page):
 
         groups_screen = ft.Column([
             ft.Text("👥 Группы", size=28, weight=ft.FontWeight.BOLD),
-            ft.Row([group_name_field, ft.ElevatedButton("Добавить", icon=ft.Icons.ADD, on_click=on_add_group)], spacing=10),
+            ft.Row([group_name_field, ft.Button("Добавить", icon=ft.Icons.ADD, on_click=on_add_group)], spacing=10),
             ft.Divider(),
             groups_list,
         ], spacing=20, scroll=ft.ScrollMode.AUTO)
@@ -398,7 +398,7 @@ async def main(page: ft.Page):
             ft.Text("📅 Занятие", size=28, weight=ft.FontWeight.BOLD),
             ft.Text("Выбери группу. Дата и время проставятся автоматически.", color=ft.Colors.GREY),
             ft.Divider(), ft.Row([lesson_group_dd]), ft.Container(height=10),
-            ft.ElevatedButton("▶  Начать занятие", icon=ft.Icons.PLAY_ARROW, on_click=on_start_lesson,
+            ft.Button("▶  Начать занятие", icon=ft.Icons.PLAY_ARROW, on_click=on_start_lesson,
                 style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, padding=20), width=320),
             lesson_status,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
@@ -411,8 +411,8 @@ async def main(page: ft.Page):
             ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), refresh_attendees()))], alignment=ft.MainAxisAlignment.CENTER),
             ft.Divider(), qr_attendees_count, qr_attendees_list, ft.Container(height=10),
             ft.Row([
-                ft.ElevatedButton("✅ Отметить всех вручную", on_click=on_mark_all),
-                ft.ElevatedButton("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
+                ft.Button("✅ Отметить всех вручную", on_click=on_mark_all),
+                ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
                                   style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE)),
             ], spacing=10),
         ], spacing=12, scroll=ft.ScrollMode.AUTO)
@@ -599,7 +599,7 @@ async def main(page: ft.Page):
             ft.Container(
                 content=ft.Column([
                     ft.Text(f"👋 Здравствуйте, {user['full_name']}!", size=26, weight=ft.FontWeight.BOLD),
-                    ft.ElevatedButton("📷 Отметиться на занятии", icon=ft.Icons.QR_CODE_SCANNER, on_click=scan_qr, height=50),
+                    ft.Button("📷 Отметиться на занятии", icon=ft.Icons.QR_CODE_SCANNER, on_click=scan_qr, height=50),
                     status_msg,
                     ft.Divider(), 
                     ft.Text("Моя посещаемость", size=20, weight=ft.FontWeight.BOLD),
@@ -655,7 +655,7 @@ async def main(page: ft.Page):
                                 ft.Text(f"Email: {s['email']}", size=12),
                                 ft.Text(f"| Телефон: {device_status}", size=12),
                                 ft.Text(f"| {count_text}", size=12, color=count_color),
-                                ft.ElevatedButton(
+                                ft.Button(
                                     "🔄 Сбросить телефон", 
                                     on_click=make_reset_handler(s["id"]),
                                     style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_100, color=ft.Colors.ORANGE_900)
