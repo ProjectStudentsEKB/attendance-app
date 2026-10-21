@@ -830,4 +830,4 @@ def main(page: ft.Page):
     page.add(root)
     render()
 
-ft.app(target=main)
+ft.run(main)
