@@ -14,12 +14,17 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
         # Проверяем, есть ли уже ID у этого устройства, если нет - создаем
-    device_id = page.client_storage.get("my_device_id")
-    if not device_id:
-        
-        device_id = str(uuid.uuid4())
-        page.client_storage.set("my_device_id", device_id)
+    # Универсальный код для старой (0.25) и новой (1.0) версий Flet
+    if hasattr(page, "shared_preferences"):
+        storage = page.shared_preferences
+    else:
+        storage = page.client_storage
 
+    device_id = storage.get("my_device_id")
+    if not device_id:
+        device_id = str(uuid.uuid4())
+        storage.set("my_device_id", device_id)
+        
     state = {"user": None, "view": "login"}
     root = ft.Container(expand=True)
 
@@ -830,4 +835,7 @@ def main(page: ft.Page):
     page.add(root)
     render()
 
-ft.run(main)
+if hasattr(ft, "run"):
+    ft.run(main)
+else:
+    ft.app(target=main)
