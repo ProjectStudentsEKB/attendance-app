@@ -73,10 +73,6 @@ async def main(page: ft.Page):
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
         )
-
-    # ==========================================================
-    # ЭКРАН РЕГИСТРАЦИИ
-    # ==========================================================
     # ==========================================================
     # ЭКРАН РЕГИСТРАЦИИ
     # ==========================================================
@@ -91,33 +87,16 @@ async def main(page: ft.Page):
                 ft.DropdownOption(key="teacher", text="Преподаватель"),
             ])
         
-        # Поля для студента
+        # Контейнер, в который мы будем добавлять поля
+        dynamic_container = ft.Column(spacing=10)
+
+        # --- Поля для студента ---
         group_dd = ft.Dropdown(label="Выберите группу", width=400)
         student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
-        code_field = ft.TextField(label="Персональный код (из деканата)", width=400)
-        code_field.visible = False
+        code_field = ft.TextField(label="Персональный код (из деканата)", width=400, visible=False)
         
         for g in db.get_registry_groups():
             group_dd.options.append(ft.DropdownOption(key=g, text=g))
-            
-        student_container = ft.Column([group_dd, student_dd, code_field], spacing=10)
-        
-        # Поля для преподавателя
-        full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
-        teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
-        teacher_container = ft.Column([full_name_field, teacher_code_field], spacing=10, visible=False)
-
-        # Функция переключения полей (исправленная)
-        def on_role_change(e):
-            if role_dropdown.value == "student":
-                student_container.visible = True
-                teacher_container.visible = False
-            else:
-                student_container.visible = False
-                teacher_container.visible = True
-            page.update()
-
-        role_dropdown.on_change = on_role_change
 
         def on_group_change(e):
             student_dd.options.clear()
@@ -135,6 +114,23 @@ async def main(page: ft.Page):
             code_field.visible = bool(student_dd.value)
             page.update()
         student_dd.on_change = on_student_change
+
+        # --- Поля для преподавателя ---
+        full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
+        teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
+
+        # --- Логика переключения ---
+        def on_role_change(e):
+            dynamic_container.controls.clear() # Очищаем всё
+            if role_dropdown.value == "student":
+                dynamic_container.controls.extend([group_dd, student_dd, code_field])
+            else:
+                dynamic_container.controls.extend([full_name_field, teacher_code_field])
+            page.update()
+
+        role_dropdown.on_change = on_role_change
+        # Вызываем один раз при запуске, чтобы поля появились
+        on_role_change(None)
 
         error_text = ft.Text("", color=ft.Colors.RED)
 
@@ -157,10 +153,7 @@ async def main(page: ft.Page):
                 
                 success, result = db.sign_up(email, password, "", role, None)
                 if not success:
-                    if "User already registered" in str(result):
-                        error_text.value = "Эта почта уже зарегистрирована."
-                    else:
-                        error_text.value = f"Ошибка: {result}"
+                    error_text.value = "Эта почта уже зарегистрирована." if "User already registered" in str(result) else f"Ошибка: {result}"
                     page.update()
                     return
                 
@@ -193,7 +186,6 @@ async def main(page: ft.Page):
                     page.update()
                     return
                 
-                # Проверка секретного кода преподавателя
                 real_teacher_code = db.get_setting("teacher_code")
                 if t_code != real_teacher_code:
                     error_text.value = "Неверный секретный код преподавателя!"
@@ -206,10 +198,7 @@ async def main(page: ft.Page):
                     state["user"] = db.get_profile()
                     render()
                 else:
-                    if "User already registered" in str(result):
-                        error_text.value = "Эта почта уже зарегистрирована."
-                    else:
-                        error_text.value = f"Ошибка: {result}"
+                    error_text.value = "Эта почта уже зарегистрирована." if "User already registered" in str(result) else f"Ошибка: {result}"
                     page.update()
 
         def goto_login(e):
@@ -220,15 +209,15 @@ async def main(page: ft.Page):
             content=ft.Column([
                 ft.Text("Регистрация", size=32, weight=ft.FontWeight.BOLD),
                 email_field, password_field, role_dropdown, 
-                student_container,
-                teacher_container,
+                dynamic_container, # <--- Сюда будут подставляться поля
                 error_text,
                 ft.Button("Зарегистрироваться", width=400, on_click=on_register),
                 ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
-        )
+        )        
 
+    
     # ==========================================================
     # ПРИЛОЖЕНИЕ ПРЕПОДАВАТЕЛЯ
     # ==========================================================
