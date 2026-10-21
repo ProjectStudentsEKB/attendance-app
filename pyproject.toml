@@ -2,7 +2,7 @@
 name = "attendance-app"
 version = "1.0.0"
 dependencies = [
-    "flet>=0.25.0",
+    "flet>=0.86.0",
     "supabase",
     "segno",
 ]
