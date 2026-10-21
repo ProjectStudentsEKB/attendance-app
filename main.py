@@ -77,6 +77,9 @@ async def main(page: ft.Page):
     # ==========================================================
     # ЭКРАН РЕГИСТРАЦИИ
     # ==========================================================
+    # ==========================================================
+    # ЭКРАН РЕГИСТРАЦИИ
+    # ==========================================================
     def build_register():
         email_field = ft.TextField(label="Email", width=400)
         password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, width=400)
@@ -88,6 +91,7 @@ async def main(page: ft.Page):
                 ft.DropdownOption(key="teacher", text="Преподаватель"),
             ])
         
+        # Поля для студента
         group_dd = ft.Dropdown(label="Выберите группу", width=400)
         student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
         code_field = ft.TextField(label="Персональный код (из деканата)", width=400)
@@ -97,14 +101,22 @@ async def main(page: ft.Page):
             group_dd.options.append(ft.DropdownOption(key=g, text=g))
             
         student_container = ft.Column([group_dd, student_dd, code_field], spacing=10)
-        full_name_field = ft.TextField(label="ФИО", width=400)
-        full_name_field.visible = False
+        
+        # Поля для преподавателя
+        full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
+        teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
+        teacher_container = ft.Column([full_name_field, teacher_code_field], spacing=10, visible=False)
 
+        # Функция переключения полей (исправленная)
         def on_role_change(e):
-            is_student = (role_dropdown.value == "student")
-            student_container.visible = is_student
-            full_name_field.visible = not is_student
+            if role_dropdown.value == "student":
+                student_container.visible = True
+                teacher_container.visible = False
+            else:
+                student_container.visible = False
+                teacher_container.visible = True
             page.update()
+
         role_dropdown.on_change = on_role_change
 
         def on_group_change(e):
@@ -172,19 +184,32 @@ async def main(page: ft.Page):
                 state["user"] = db.get_profile()
                 render()
             
-            else:
+            else: # Для преподавателя
                 f_name = (full_name_field.value or "").strip()
+                t_code = (teacher_code_field.value or "").strip()
+                
                 if not f_name:
                     error_text.value = "Введи ФИО"
                     page.update()
                     return
+                
+                # Проверка секретного кода преподавателя
+                real_teacher_code = db.get_setting("teacher_code")
+                if t_code != real_teacher_code:
+                    error_text.value = "Неверный секретный код преподавателя!"
+                    page.update()
+                    return
+
                 success, result = db.sign_up(email, password, f_name, role, None)
                 if success:
                     db.sign_in(email, password)
                     state["user"] = db.get_profile()
                     render()
                 else:
-                    error_text.value = f"Ошибка: {result}"
+                    if "User already registered" in str(result):
+                        error_text.value = "Эта почта уже зарегистрирована."
+                    else:
+                        error_text.value = f"Ошибка: {result}"
                     page.update()
 
         def goto_login(e):
@@ -195,8 +220,8 @@ async def main(page: ft.Page):
             content=ft.Column([
                 ft.Text("Регистрация", size=32, weight=ft.FontWeight.BOLD),
                 email_field, password_field, role_dropdown, 
-                full_name_field,
                 student_container,
+                teacher_container,
                 error_text,
                 ft.Button("Зарегистрироваться", width=400, on_click=on_register),
                 ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
