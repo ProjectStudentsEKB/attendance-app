@@ -268,3 +268,7 @@ def get_group_stats(group_id):
         })
     
     return result, total_lessons
+    
+def get_setting(key):
+    res = supabase.table("settings").select("value").eq("key", key).execute()
+    return res.data[0]["value"] if res.data else None
