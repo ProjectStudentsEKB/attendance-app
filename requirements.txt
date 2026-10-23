@@ -1,3 +1,5 @@
 flet>=0.86.0
 supabase
 segno
+flet-camera
+flet-geolocator
