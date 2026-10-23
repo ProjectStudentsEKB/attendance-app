@@ -6,23 +6,21 @@ import uuid
 import time as _time
 from datetime import datetime
 import math
-# import cv2
-# from pyzbar.pyzbar import decode
-
+import flet_camera as fc
+import flet_geolocator as fg
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
 
-    # Новый способ работы с хранилищем (Flet 1.0)
     prefs = ft.SharedPreferences()
     device_id = await prefs.get("my_device_id")
     if not device_id:
         device_id = str(uuid.uuid4())
         await prefs.set("my_device_id", device_id)
 
-    state = {"user": None, "view": "login"}
+    state = {"user": None, "view": "login", "reg_role": "student", "reg_email": "", "reg_password": ""}
     root = ft.Container(expand=True)
 
     # ==========================================================
@@ -32,192 +30,237 @@ async def main(page: ft.Page):
         email_field = ft.TextField(label="Email", width=320)
         password_field = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=320)
         error_text = ft.Text("", color=ft.Colors.RED)
-
-        def on_login(e):
+        
+        login_btn = ft.Button("Войти", width=320)
+        loading_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
+        
+        async def on_login(e):
             error_text.value = ""
             if not email_field.value or not password_field.value:
                 error_text.value = "Заполни все поля"
                 page.update()
                 return
             
-            success, msg = db.sign_in(email_field.value, password_field.value)
+            login_btn.content = ft.Row([
+                ft.Text("Подождите, идет вход...", color=ft.Colors.WHITE),
+                loading_ring
+            ], alignment=ft.MainAxisAlignment.CENTER)
+            login_btn.disabled = True
+            loading_ring.visible = True
+            page.update()
+            
+            success, msg = await asyncio.to_thread(db.sign_in, email_field.value, password_field.value)
+            
             if success:
-                profile = db.get_profile()
-                saved_device = db.get_user_device_id(profile["id"])
+                profile = await asyncio.to_thread(db.get_profile)
+                saved_device = await asyncio.to_thread(db.get_user_device_id, profile["id"])
                 
                 if saved_device is None:
-                    db.bind_device(profile["id"], device_id)
+                    await asyncio.to_thread(db.bind_device, profile["id"], device_id)
                     state["user"] = profile
                     render()
                 elif saved_device == device_id:
                     state["user"] = profile
                     render()
                 else:
-                    db.sign_out()
+                    await asyncio.to_thread(db.sign_out)
                     error_text.value = "❌ Вход заблокирован: аккаунт привязан к другому устройству!"
+                    login_btn.content = "Войти"
+                    login_btn.disabled = False
+                    loading_ring.visible = False
                     page.update()
             else:
                 error_text.value = "Неверный email или пароль"
+                login_btn.content = "Войти"
+                login_btn.disabled = False
+                loading_ring.visible = False
                 page.update()
 
-        def goto_register(e):
+        login_btn.on_click = on_login
+
+        async def goto_register(e):
             state["view"] = "register"
+            state["reg_role"] = "student"
             render()
 
         return ft.Container(
             content=ft.Column([
                 ft.Text("Вход", size=32, weight=ft.FontWeight.BOLD),
                 email_field, password_field, error_text,
-                ft.Button("Войти", width=320, on_click=on_login),
+                login_btn,
                 ft.TextButton("Ещё нет аккаунта? Зарегистрироваться", on_click=goto_register),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
         )
+
     # ==========================================================
     # ЭКРАН РЕГИСТРАЦИИ
     # ==========================================================
     def build_register():
-        email_field = ft.TextField(label="Email", width=400)
-        password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, width=400)
+        current_role = state["reg_role"]
         
+        email_field = ft.TextField(label="Email", width=400, value=state["reg_email"])
+        password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, width=400, value=state["reg_password"])
+        
+        def on_role_change(e):
+            state["reg_role"] = e.control.value
+            state["reg_email"] = email_field.value
+            state["reg_password"] = password_field.value
+            render() 
+
         role_dropdown = ft.Dropdown(
-            label="Кто вы?", width=400, value="student",
+            label="Кто вы?", width=400, value=current_role,
             options=[
                 ft.DropdownOption(key="student", text="Студент"),
                 ft.DropdownOption(key="teacher", text="Преподаватель"),
-            ])
-        
-        # Контейнер, в который мы будем добавлять поля
-        dynamic_container = ft.Column(spacing=10)
-
-        # --- Поля для студента ---
-        group_dd = ft.Dropdown(label="Выберите группу", width=400)
-        student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
-        code_field = ft.TextField(label="Персональный код (из деканата)", width=400, visible=False)
-        
-        for g in db.get_registry_groups():
-            group_dd.options.append(ft.DropdownOption(key=g, text=g))
-
-        def on_group_change(e):
-            student_dd.options.clear()
-            student_dd.value = None
-            code_field.value = ""
-            code_field.visible = False
-            if group_dd.value:
-                students = db.get_registry_students(group_dd.value)
-                for s in students:
-                    student_dd.options.append(ft.DropdownOption(key=s["id"], text=s["full_name"]))
-            page.update()
-        group_dd.on_change = on_group_change
-        
-        def on_student_change(e):
-            code_field.visible = bool(student_dd.value)
-            page.update()
-        student_dd.on_change = on_student_change
-
-        # --- Поля для преподавателя ---
-        full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
-        teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
-
-        # --- Логика переключения ---
-        def on_role_change(e):
-            dynamic_container.controls.clear() # Очищаем всё
-            if role_dropdown.value == "student":
-                dynamic_container.controls.extend([group_dd, student_dd, code_field])
-            else:
-                dynamic_container.controls.extend([full_name_field, teacher_code_field])
-            page.update()
-
-        role_dropdown.on_change = on_role_change
-        # Вызываем один раз при запуске, чтобы поля появились
-        on_role_change(None)
+            ],
+            on_select=on_role_change
+        )
 
         error_text = ft.Text("", color=ft.Colors.RED)
+        
+        register_btn = ft.Button("Зарегистрироваться", width=400)
+        loading_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
 
-        def on_register(e):
-            error_text.value = ""
-            email = (email_field.value or "").strip()
-            password = password_field.value or ""
-            role = role_dropdown.value
-
-            if not email or not password:
-                error_text.value = "Заполни Email и пароль"
-                page.update()
-                return
+        if current_role == "student":
+            group_dd = ft.Dropdown(label="Выберите группу", width=400)
+            student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
+            code_field = ft.TextField(label="Персональный код (из деканата)", width=400)
             
-            if role == "student":
-                if not group_dd.value or not student_dd.value or not code_field.value:
+            for g in db.get_registry_groups():
+                group_dd.options.append(ft.DropdownOption(key=g, text=g))
+
+            async def on_group_change(e):
+                student_dd.options.clear()
+                student_dd.value = None
+                code_field.value = ""
+                if group_dd.value:
+                    students = db.get_registry_students(group_dd.value)
+                    if not students:
+                        student_dd.options.append(ft.DropdownOption(key="none", text="Нет свободных студентов"))
+                    else:
+                        for s in students:
+                            student_dd.options.append(ft.DropdownOption(key=s["id"], text=s["full_name"]))
+                page.update()
+            group_dd.on_select = on_group_change
+
+            async def on_register(e):
+                error_text.value = ""
+                email = (email_field.value or "").strip()
+                password = password_field.value or ""
+
+                if not email or not password:
+                    error_text.value = "Заполни Email и пароль"
+                    page.update()
+                    return
+                
+                if not group_dd.value or not student_dd.value or not code_field.value or student_dd.value == "none":
                     error_text.value = "Выбери группу, ФИО и введи код"
                     page.update()
                     return
                 
-                success, result = db.sign_up(email, password, "", role, None)
+                register_btn.content = ft.Row([ft.Text("Подождите...", color=ft.Colors.WHITE), loading_ring], alignment=ft.MainAxisAlignment.CENTER)
+                register_btn.disabled = True
+                loading_ring.visible = True
+                page.update()
+                
+                success, result = await asyncio.to_thread(db.sign_up, email, password, "", "student", None)
                 if not success:
                     error_text.value = "Эта почта уже зарегистрирована." if "User already registered" in str(result) else f"Ошибка: {result}"
+                    register_btn.content = "Зарегистрироваться"
+                    register_btn.disabled = False
+                    loading_ring.visible = False
                     page.update()
                     return
                 
                 new_user_id = result 
-                ok, msg = db.verify_and_bind_student(student_dd.value, code_field.value.upper(), new_user_id)
+                ok, msg = await asyncio.to_thread(db.verify_and_bind_student, student_dd.value, code_field.value.upper(), new_user_id)
                 if not ok:
                     error_text.value = msg
+                    register_btn.content = "Зарегистрироваться"
+                    register_btn.disabled = False
+                    loading_ring.visible = False
                     page.update()
                     return
                 
-                reg_data = db.supabase.table("students_registry").select("full_name").eq("id", student_dd.value).execute()
+                reg_data = await asyncio.to_thread(db.supabase.table("students_registry").select("full_name").eq("id", student_dd.value).execute)
                 real_name = reg_data.data[0]["full_name"]
+                grp_id = await asyncio.to_thread(db.get_group_id_by_name, group_dd.value)
                 
-                grp_id = db.get_group_id_by_name(group_dd.value)
-                db.supabase.table("users").update({
+                await asyncio.to_thread(db.supabase.table("users").update({
                     "full_name": real_name,
                     "group_id": grp_id
-                }).eq("id", new_user_id).execute()
+                }).eq("id", new_user_id).execute)
 
-                db.sign_in(email, password)
-                state["user"] = db.get_profile()
+                await asyncio.to_thread(db.sign_in, email, password)
+                state["user"] = await asyncio.to_thread(db.get_profile)
+                state["reg_role"] = "student"
                 render()
-            
-            else: # Для преподавателя
+
+            form_fields = [group_dd, student_dd, code_field]
+            register_btn.on_click = on_register
+
+        else:
+            full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
+            teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
+
+            async def on_register(e):
+                error_text.value = ""
+                email = (email_field.value or "").strip()
+                password = password_field.value or ""
                 f_name = (full_name_field.value or "").strip()
                 t_code = (teacher_code_field.value or "").strip()
-                
-                if not f_name:
-                    error_text.value = "Введи ФИО"
+
+                if not email or not password or not f_name:
+                    error_text.value = "Заполни Email, пароль и ФИО"
                     page.update()
                     return
                 
-                real_teacher_code = db.get_setting("teacher_code")
+                real_teacher_code = await asyncio.to_thread(db.get_setting, "teacher_code")
                 if t_code != real_teacher_code:
                     error_text.value = "Неверный секретный код преподавателя!"
                     page.update()
                     return
 
-                success, result = db.sign_up(email, password, f_name, role, None)
+                register_btn.content = ft.Row([ft.Text("Подождите...", color=ft.Colors.WHITE), loading_ring], alignment=ft.MainAxisAlignment.CENTER)
+                register_btn.disabled = True
+                loading_ring.visible = True
+                page.update()
+
+                success, result = await asyncio.to_thread(db.sign_up, email, password, f_name, "teacher", None)
                 if success:
-                    db.sign_in(email, password)
-                    state["user"] = db.get_profile()
+                    await asyncio.to_thread(db.sign_in, email, password)
+                    state["user"] = await asyncio.to_thread(db.get_profile)
+                    state["reg_role"] = "student"
                     render()
                 else:
                     error_text.value = "Эта почта уже зарегистрирована." if "User already registered" in str(result) else f"Ошибка: {result}"
+                    register_btn.content = "Зарегистрироваться"
+                    register_btn.disabled = False
+                    loading_ring.visible = False
                     page.update()
 
-        def goto_login(e):
+            form_fields = [full_name_field, teacher_code_field]
+            register_btn.on_click = on_register
+
+        async def goto_login(e):
             state["view"] = "login"
             render()
 
         return ft.Container(
             content=ft.Column([
                 ft.Text("Регистрация", size=32, weight=ft.FontWeight.BOLD),
-                email_field, password_field, role_dropdown, 
-                dynamic_container, # <--- Сюда будут подставляться поля
+                email_field, 
+                password_field, 
+                role_dropdown, 
+                *form_fields, 
                 error_text,
-                ft.Button("Зарегистрироваться", width=400, on_click=on_register),
+                register_btn,
                 ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
-        )        
+        )
 
-    
     # ==========================================================
     # ПРИЛОЖЕНИЕ ПРЕПОДАВАТЕЛЯ
     # ==========================================================
@@ -230,7 +273,6 @@ async def main(page: ft.Page):
             ft.Text("Выберите раздел в меню слева."),
         ], spacing=20)
 
-        # ---- ГРУППЫ ----
         group_name_field = ft.TextField(label="Название группы", hint_text="ИС-21", width=300)
         groups_list = ft.Column(spacing=10)
 
@@ -275,7 +317,6 @@ async def main(page: ft.Page):
             groups_list,
         ], spacing=20, scroll=ft.ScrollMode.AUTO)
 
-        # ---- СТУДЕНТЫ ----
         students_title = ft.Text("", size=28, weight=ft.FontWeight.BOLD)
         students_list = ft.Column(spacing=10)
 
@@ -302,13 +343,12 @@ async def main(page: ft.Page):
             students_list,
         ], spacing=20, scroll=ft.ScrollMode.AUTO)
 
-        # ---- ЗАНЯТИЕ И QR ----
         lesson_group_dd = ft.Dropdown(label="Группа", width=320, options=[])
         lesson_status = ft.Text("", weight=ft.FontWeight.BOLD)
         
         qr_lesson_id = {"value": None}
         qr_lesson_info = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
-        qr_image = ft.Image(src_base64="", width=320, height=320, fit=ft.BoxFit.CONTAIN)
+        qr_image = ft.Image(src="", width=320, height=320, fit=ft.BoxFit.CONTAIN)
         qr_countdown = ft.Text("", size=14, color=ft.Colors.GREY)
         qr_attendees_count = ft.Text("", size=15, weight=ft.FontWeight.BOLD)
         qr_attendees_list = ft.Column(spacing=5)
@@ -324,7 +364,7 @@ async def main(page: ft.Page):
             if qr_lesson_id["value"] is None: return
             token = qr_utils.make_lesson_token(qr_lesson_id["value"])
             b64 = qr_utils.make_qr_base64(token)
-            qr_image.src_base64 = b64
+            qr_image.src = b64
             qr_countdown.value = f"⏱ Обновится через {qr_utils.seconds_remaining()} сек"
             page.update()
 
@@ -336,7 +376,7 @@ async def main(page: ft.Page):
             all_students = db.get_students(lesson_group_dd.value)
             present_ids = db.get_attendance(qr_lesson_id["value"])
             
-            qr_attendees_count.value = f"✅ Отметились: {len(present_ids)} из {len(all_students)}"
+            qr_attendees_count.value = f"✅ Отметались: {len(present_ids)} из {len(all_students)}"
 
             if not present_ids:
                 qr_attendees_list.controls.append(ft.Text("Пока никто не отметился.", italic=True, color=ft.Colors.GREY, size=12))
@@ -368,7 +408,7 @@ async def main(page: ft.Page):
         def stop_qr_auto_refresh():
             qr_auto_thread["running"] = False
 
-        def on_start_lesson(e):
+        async def on_start_lesson(e):
             lesson_status.value = ""
             if not lesson_group_dd.value:
                 lesson_status.value = "Выбери группу"
@@ -376,9 +416,20 @@ async def main(page: ft.Page):
                 page.update()
                 return
             
-            lat, lon = 51.723, 75.321
+            lesson_status.value = "Запрос координат GPS..."
+            lesson_status.color = ft.Colors.BLUE
+            page.update()
+
+            geo = fg.Geolocator()
+            try:
+                pos = await geo.get_current_position_async()
+                lat = pos.latitude if pos else None
+                lon = pos.longitude if pos else None
+            except Exception:
+                lat, lon = None, None
+            
             gid = lesson_group_dd.value
-            lid = db.start_lesson(gid, user["id"], lat, lon)
+            lid = await asyncio.to_thread(db.start_lesson, gid, user["id"], lat, lon)
             now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
             
             qr_lesson_id["value"] = lid
@@ -431,7 +482,6 @@ async def main(page: ft.Page):
             ], spacing=10),
         ], spacing=12, scroll=ft.ScrollMode.AUTO)
 
-        # ---- СТАТИСТИКА ----
         stats_group_dd = ft.Dropdown(label="Выберите группу", width=300, options=[])
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
@@ -486,7 +536,7 @@ async def main(page: ft.Page):
                     padding=10, bgcolor=bg, border_radius=8))
             page.update()
 
-        stats_group_dd.on_change = refresh_stats
+        stats_group_dd.on_select = refresh_stats
 
         stats_screen = ft.Column([
             ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD),
@@ -496,7 +546,6 @@ async def main(page: ft.Page):
             stats_list,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
 
-        # ---- СБОРКА ----
         screens = [home_screen, groups_screen, students_screen, lesson_screen, stats_screen, qr_screen]
         content_area = ft.Container(content=screens[0], padding=20, expand=True)
 
@@ -586,11 +635,71 @@ async def main(page: ft.Page):
                     ]), padding=12, bgcolor=ft.Colors.GREY_100, border_radius=8))
             page.update()
 
-        def scan_qr(e):
-            status_msg.value = "Сканер в мобильной версии в разработке"
-            status_msg.color = ft.Colors.ORANGE
+        async def scan_qr(e):
+            status_msg.value = "Запрос доступа к камере и GPS..."
+            status_msg.color = ft.Colors.BLUE
             page.update()
-            return
+
+            geo = fg.Geolocator()
+            try:
+                pos = await geo.get_current_position_async()
+                student_lat = pos.latitude if pos else None
+                student_lon = pos.longitude if pos else None
+            except Exception:
+                student_lat, student_lon = None, None
+
+            camera = fc.Camera(
+                expand=True,
+                on_qr_code_detected=lambda e: page.run_task(handle_qr_data, e, student_lat, student_lon)
+            )
+            
+            page.show_dialog(ft.AlertDialog(
+                title=ft.Text("Наведите камеру на QR-код"),
+                content=camera,
+                actions=[ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())]
+            ))
+
+        async def handle_qr_data(e, student_lat, student_lon):
+            qr_data = e.data
+            page.close_dialog()
+            
+            status_msg.value = "QR распознан! Проверяю геолокацию..."
+            status_msg.color = ft.Colors.BLUE
+            page.update()
+
+            parts = qr_data.split(":")
+            lesson_id = parts[0]
+            qr_timestamp = parts[1] if len(parts) > 1 else "0"
+
+            lesson_lat, lesson_lon = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
+            
+            is_close = True
+            if lesson_lat and lesson_lon and student_lat and student_lon:
+                R = 6371000
+                phi1, phi2 = math.radians(lesson_lat), math.radians(student_lat)
+                dphi = math.radians(student_lat - lesson_lat)
+                dlambda = math.radians(student_lon - lesson_lon)
+                a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+                distance = 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+                
+                if distance > 70:
+                    is_close = False
+
+            if not is_close:
+                status_msg.value = "❌ Вы находитесь слишком далеко от аудитории!"
+                status_msg.color = ft.Colors.RED
+                page.update()
+                return
+            
+            success, msg = await asyncio.to_thread(db.mark_student_present, lesson_id, user["id"], qr_timestamp)
+            if success:
+                status_msg.value = "✅ " + msg
+                status_msg.color = ft.Colors.GREEN
+                refresh()
+            else:
+                status_msg.value = "❌ Ошибка: " + msg
+                status_msg.color = ft.Colors.RED
+            page.update()
 
         def logout(e):
             db.sign_out()
@@ -624,7 +733,7 @@ async def main(page: ft.Page):
         ], expand=True, spacing=0)
 
     # ==========================================================
-    # ПРИЛОЖЕНИЕ АДМИНИСТРАТОРА
+    # ПАНЕЛЬ АДМИНИСТРАТОРА
     # ==========================================================
     def build_admin_app():
         user = state["user"]
@@ -714,9 +823,6 @@ async def main(page: ft.Page):
             ),
         ], expand=True, spacing=0)
 
-    # ==========================================================
-    # ПЕРЕРИСОВКА
-    # ==========================================================
     def render():
         if state["user"] is None:
             root.content = build_login() if state["view"] == "login" else build_register()
