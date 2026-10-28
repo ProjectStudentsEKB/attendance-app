@@ -348,7 +348,7 @@ async def main(page: ft.Page):
         
         qr_lesson_id = {"value": None}
         qr_lesson_info = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
-        qr_image = ft.Image(width=320, height=320, fit=ft.BoxFit.CONTAIN)
+        qr_image = ft.Image(src="", width=320, height=320, fit=ft.BoxFit.CONTAIN)
         qr_countdown = ft.Text("", size=14, color=ft.Colors.GREY)
         qr_attendees_count = ft.Text("", size=15, weight=ft.FontWeight.BOLD)
         qr_attendees_list = ft.Column(spacing=5)
