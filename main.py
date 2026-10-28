@@ -348,7 +348,9 @@ async def main(page: ft.Page):
         
         qr_lesson_id = {"value": None}
         qr_lesson_info = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
-        qr_image = ft.Image(src="", width=320, height=320, fit=ft.BoxFit.CONTAIN)
+        # Создаем невидимый пиксель в формате Base64, чтобы Flet не ругался на пустоту
+        BLANK_IMG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        qr_image = ft.Image(src=BLANK_IMG, width=320, height=320, fit=ft.BoxFit.CONTAIN)
         qr_countdown = ft.Text("", size=14, color=ft.Colors.GREY)
         qr_attendees_count = ft.Text("", size=15, weight=ft.FontWeight.BOLD)
         qr_attendees_list = ft.Column(spacing=5)
@@ -364,7 +366,7 @@ async def main(page: ft.Page):
             if qr_lesson_id["value"] is None: return
             token = qr_utils.make_lesson_token(qr_lesson_id["value"])
             b64 = qr_utils.make_qr_base64(token)
-            qr_image.src = b64
+            qr_image.src = f"data:image/png;base64,{b64}"
             qr_countdown.value = f"⏱ Обновится через {qr_utils.seconds_remaining()} сек"
             page.update()
 
