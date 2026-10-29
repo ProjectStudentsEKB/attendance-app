@@ -6,8 +6,8 @@ import uuid
 import time as _time
 from datetime import datetime
 import math
-import flet_camera as fc
 import flet_geolocator as fg
+from fletzxing import ZXingScanner
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -642,6 +642,7 @@ async def main(page: ft.Page):
             status_msg.color = ft.Colors.BLUE
             page.update()
 
+            # 1. Получаем координаты студента
             geo = fg.Geolocator()
             try:
                 pos = await geo.get_current_position_async()
@@ -650,20 +651,21 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            camera = fc.Camera(
+            # 2. Открываем сканер QR-кодов
+            scanner = ZXingScanner(
                 expand=True,
-                on_qr_code_detected=lambda e: page.run_task(handle_qr_data, e, student_lat, student_lon)
+                on_result=lambda e: page.run_task(handle_qr_data, e, student_lat, student_lon)
             )
             
             page.show_dialog(ft.AlertDialog(
                 title=ft.Text("Наведите камеру на QR-код"),
-                content=camera,
+                content=scanner,
                 actions=[ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())]
             ))
 
         async def handle_qr_data(e, student_lat, student_lon):
             qr_data = e.data
-            page.close_dialog()
+            page.close_dialog() # Закрываем сканер
             
             status_msg.value = "QR распознан! Проверяю геолокацию..."
             status_msg.color = ft.Colors.BLUE
@@ -673,6 +675,7 @@ async def main(page: ft.Page):
             lesson_id = parts[0]
             qr_timestamp = parts[1] if len(parts) > 1 else "0"
 
+            # 3. Получаем координаты преподавателя и сравниваем
             lesson_lat, lesson_lon = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
             
             is_close = True
@@ -693,6 +696,7 @@ async def main(page: ft.Page):
                 page.update()
                 return
             
+            # 4. Отмечаем студента в базе
             success, msg = await asyncio.to_thread(db.mark_student_present, lesson_id, user["id"], qr_timestamp)
             if success:
                 status_msg.value = "✅ " + msg
