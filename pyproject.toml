@@ -6,7 +6,9 @@ dependencies = [
     "supabase",
     "segno",
     "flet-geolocator",
-    "fletzxing",
+    "flet-camera",
+    "pyzbar",
+    "pillow",
 ]
 
 [tool.flet.android.permission]
