@@ -3,3 +3,4 @@ supabase
 segno
 flet-camera
 flet-geolocator
+fletzxing
