@@ -7,7 +7,10 @@ import time as _time
 from datetime import datetime
 import math
 import flet_geolocator as fg
-from fletzxing import ZXingScanner
+import flet_camera as fc
+from pyzbar.pyzbar import decode
+from PIL import Image
+import io
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -637,6 +640,9 @@ async def main(page: ft.Page):
                     ]), padding=12, bgcolor=ft.Colors.GREY_100, border_radius=8))
             page.update()
 
+        # Глобальная переменная для хранения ссылки на камеру, чтобы делать снимок
+        active_camera = {"ref": None}
+
         async def scan_qr(e):
             status_msg.value = "Запрос доступа к камере и GPS..."
             status_msg.color = ft.Colors.BLUE
@@ -651,22 +657,46 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            # 2. Открываем сканер QR-кодов
-            scanner = ZXingScanner(
+            # 2. Создаем камеру
+            camera = fc.Camera(
                 expand=True,
-                on_result=lambda e: page.run_task(handle_qr_data, e, student_lat, student_lon)
+                on_stream_image=False # Нам не нужен поток, только снимок
             )
-            
+            active_camera["ref"] = camera
+
+            # 3. Кнопка, которая делает снимок
+            async def capture_and_scan(e):
+                try:
+                    # Делаем снимок
+                    picture = await camera.take_picture()
+                    
+                    # Конвертируем байты в изображение и распознаем QR
+                    image = Image.open(io.BytesIO(picture))
+                    decoded_objects = decode(image)
+                    
+                    if decoded_objects:
+                        qr_data = decoded_objects[0].data.decode("utf-8")
+                        page.close_dialog() # Закрываем камеру
+                        await handle_qr_data(qr_data, student_lat, student_lon)
+                    else:
+                        status_msg.value = "QR-код не найден. Попробуйте еще раз."
+                        status_msg.color = ft.Colors.ORANGE
+                        page.update()
+                except Exception as ex:
+                    status_msg.value = f"Ошибка сканирования: {ex}"
+                    status_msg.color = ft.Colors.RED
+                    page.update()
+
             page.show_dialog(ft.AlertDialog(
-                title=ft.Text("Наведите камеру на QR-код"),
-                content=scanner,
-                actions=[ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())]
+                title=ft.Text("Наведите камеру на QR-код и нажмите 'Сканировать'"),
+                content=camera,
+                actions=[
+                    ft.Button("Сканировать", on_click=capture_and_scan),
+                    ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+                ]
             ))
 
-        async def handle_qr_data(e, student_lat, student_lon):
-            qr_data = e.data
-            page.close_dialog() # Закрываем сканер
-            
+        async def handle_qr_data(qr_data, student_lat, student_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
             status_msg.color = ft.Colors.BLUE
             page.update()
@@ -675,7 +705,6 @@ async def main(page: ft.Page):
             lesson_id = parts[0]
             qr_timestamp = parts[1] if len(parts) > 1 else "0"
 
-            # 3. Получаем координаты преподавателя и сравниваем
             lesson_lat, lesson_lon = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
             
             is_close = True
@@ -696,7 +725,6 @@ async def main(page: ft.Page):
                 page.update()
                 return
             
-            # 4. Отмечаем студента в базе
             success, msg = await asyncio.to_thread(db.mark_student_present, lesson_id, user["id"], qr_timestamp)
             if success:
                 status_msg.value = "✅ " + msg
