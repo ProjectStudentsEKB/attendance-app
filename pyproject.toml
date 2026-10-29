@@ -5,7 +5,11 @@ dependencies = [
     "flet>=0.86.0",
     "supabase",
     "segno",
-    "flet-camera",
     "flet-geolocator",
     "fletzxing",
 ]
+
+[tool.flet.android.permission]
+"android.permission.CAMERA" = true
+"android.permission.ACCESS_FINE_LOCATION" = true
+"android.permission.ACCESS_COARSE_LOCATION" = true
