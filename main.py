@@ -730,10 +730,12 @@ async def main(page: ft.Page):
             status_msg.value = "Запрос доступа к камере и GPS..."
             status_msg.color = ft.Colors.BLUE
             page.update()
-            # --- НОВОЕ: Запрос разрешения на камеру ---
+
+            # 1. Запрашиваем разрешение на камеру
             ph = fph.PermissionHandler()
             await ph.request_permission_async(fph.PermissionType.CAMERA)
-        
+
+            # 2. Получаем координаты студента
             geo = fg.Geolocator()
             try:
                 pos = await geo.get_current_position_async()
@@ -742,28 +744,44 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            camera = fc.Camera(expand=True, on_stream_image=False)
+            # 3. Создаем контрол камеры
+            camera = fc.Camera(
+                expand=True,
+                preview_enabled=True,  # Включаем предпросмотр, чтобы видеть картинку
+            )
             active_camera["ref"] = camera
 
-            async def capture_and_scan(e):
-                try:
-                    cameras = await fc.get_available_cameras_async()
-                    if not cameras:
-                        status_msg.value = "Камера не найдена"
-                        status_msg.color = ft.Colors.RED
-                        page.update()
-                        return
+            # 4. Получаем список камер и инициализируем первую доступную
+            try:
+                cameras = await camera.get_available_cameras()
+                if cameras:
                     await camera.initialize(
-                        description=None,
+                        description=cameras[0],
                         resolution_preset=fc.ResolutionPreset.MEDIUM
                     )
+                else:
+                    status_msg.value = "Камера не найдена на устройстве."
+                    status_msg.color = ft.Colors.RED
+                    page.update()
+                    return
+            except Exception as ex:
+                status_msg.value = f"Ошибка инициализации камеры: {ex}"
+                status_msg.color = ft.Colors.RED
+                page.update()
+                return
+
+            # 5. Открываем диалоговое окно с предпросмотром
+            async def capture_and_scan(e):
+                try:
+                    # Камера уже инициализирована, сразу делаем снимок
                     picture = await camera.take_picture()
+                    
                     image = Image.open(io.BytesIO(picture))
                     decoded_objects = decode(image)
                     
                     if decoded_objects:
                         qr_data = decoded_objects[0].data.decode("utf-8")
-                        page.pop_dialog() # Исправлено на pop_dialog
+                        page.pop_dialog()  # Закрываем камеру
                         await handle_qr_data(qr_data, student_lat, student_lon)
                     else:
                         status_msg.value = "QR-код не найден. Попробуйте еще раз."
@@ -779,10 +797,9 @@ async def main(page: ft.Page):
                 content=camera,
                 actions=[
                     ft.Button("Сканировать", on_click=capture_and_scan),
-                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog()) # Исправлено на pop_dialog
+                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
                 ]
             ))
-
         async def handle_qr_data(qr_data, student_lat, student_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
             status_msg.color = ft.Colors.BLUE
