@@ -5,3 +5,4 @@ flet-geolocator
 flet-camera
 pyzbar
 pillow
+flet-permission-handler
