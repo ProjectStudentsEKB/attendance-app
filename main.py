@@ -1,3 +1,4 @@
+import flet_permission_handler as fph
 import flet as ft
 import supabase_db as db
 import qr_utils
@@ -166,6 +167,11 @@ async def main(page: ft.Page):
                 email = (email_field.value or "").strip()
                 password = password_field.value or ""
 
+                if len(password) < 6:
+                    error_text.value = "Пароль должен быть не менее 6 символов."
+                    page.update()
+                    return
+
                 if not email or not password:
                     error_text.value = "Заполни Email и пароль"
                     page.update()
@@ -234,6 +240,11 @@ async def main(page: ft.Page):
                 password = password_field.value or ""
                 f_name = (full_name_field.value or "").strip()
                 t_code = (teacher_code_field.value or "").strip()
+
+                if len(password) < 6:
+                    error_text.value = "Пароль должен быть не менее 6 символов."
+                    page.update()
+                    return
 
                 if not email or not password or not f_name:
                     error_text.value = "Заполни Email, пароль и ФИО"
@@ -719,7 +730,10 @@ async def main(page: ft.Page):
             status_msg.value = "Запрос доступа к камере и GPS..."
             status_msg.color = ft.Colors.BLUE
             page.update()
-
+            # --- НОВОЕ: Запрос разрешения на камеру ---
+            ph = fph.PermissionHandler()
+            await ph.request_permission_async(fph.PermissionType.CAMERA)
+        
             geo = fg.Geolocator()
             try:
                 pos = await geo.get_current_position_async()
@@ -733,6 +747,16 @@ async def main(page: ft.Page):
 
             async def capture_and_scan(e):
                 try:
+                    cameras = await fc.get_available_cameras_async()
+                    if not cameras:
+                        status_msg.value = "Камера не найдена"
+                        status_msg.color = ft.Colors.RED
+                        page.update()
+                        return
+                    await camera.initialize(
+                        description=None,
+                        resolution_preset=fc.ResolutionPreset.MEDIUM
+                    )
                     picture = await camera.take_picture()
                     image = Image.open(io.BytesIO(picture))
                     decoded_objects = decode(image)
