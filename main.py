@@ -731,11 +731,20 @@ async def main(page: ft.Page):
             status_msg.color = ft.Colors.BLUE
             page.update()
 
-            # 1. Запрашиваем разрешение на камеру
+            # 1. Создаем и регистрируем PermissionHandler
             ph = fph.PermissionHandler()
-            await ph.request_permission_async(fph.PermissionType.CAMERA)
+            page.services.append(ph)  # Обязательная регистрация
 
-            # 2. Получаем координаты студента
+            # 2. Запрашиваем разрешение на камеру (новый API: request + Permission)
+            try:
+                await ph.request(fph.Permission.CAMERA)
+            except Exception as ex:
+                status_msg.value = f"Не удалось запросить разрешение: {ex}"
+                status_msg.color = ft.Colors.RED
+                page.update()
+                return
+
+            # 3. Получаем координаты студента
             geo = fg.Geolocator()
             try:
                 pos = await geo.get_current_position_async()
@@ -744,38 +753,32 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            # 3. Создаем контрол камеры
-            camera = fc.Camera(
-                expand=True,
-                preview_enabled=True,  # Включаем предпросмотр, чтобы видеть картинку
-            )
+            # 4. Создаем контрол камеры
+            camera = fc.Camera(expand=True, preview_enabled=True)
             active_camera["ref"] = camera
 
-            # 4. Получаем список камер и инициализируем первую доступную
+            # 5. Инициализируем камеру перед использованием
             try:
                 cameras = await camera.get_available_cameras()
-                if cameras:
-                    await camera.initialize(
-                        description=cameras[0],
-                        resolution_preset=fc.ResolutionPreset.MEDIUM
-                    )
-                else:
+                if not cameras:
                     status_msg.value = "Камера не найдена на устройстве."
                     status_msg.color = ft.Colors.RED
                     page.update()
                     return
+                await camera.initialize(
+                    description=cameras[0],
+                    resolution_preset=fc.ResolutionPreset.MEDIUM
+                )
             except Exception as ex:
                 status_msg.value = f"Ошибка инициализации камеры: {ex}"
                 status_msg.color = ft.Colors.RED
                 page.update()
                 return
 
-            # 5. Открываем диалоговое окно с предпросмотром
+            # 6. Диалог с камерой и кнопкой сканирования
             async def capture_and_scan(e):
                 try:
-                    # Камера уже инициализирована, сразу делаем снимок
                     picture = await camera.take_picture()
-                    
                     image = Image.open(io.BytesIO(picture))
                     decoded_objects = decode(image)
                     
