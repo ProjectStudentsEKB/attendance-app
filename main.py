@@ -676,7 +676,7 @@ async def main(page: ft.Page):
                     
                     if decoded_objects:
                         qr_data = decoded_objects[0].data.decode("utf-8")
-                        page.close_dialog() # Закрываем камеру
+                        page.pop_dialog() # Закрываем камеру
                         await handle_qr_data(qr_data, student_lat, student_lon)
                     else:
                         status_msg.value = "QR-код не найден. Попробуйте еще раз."
@@ -692,7 +692,7 @@ async def main(page: ft.Page):
                 content=camera,
                 actions=[
                     ft.Button("Сканировать", on_click=capture_and_scan),
-                    ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
                 ]
             ))
 
