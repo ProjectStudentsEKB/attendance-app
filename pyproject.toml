@@ -9,6 +9,7 @@ dependencies = [
     "flet-camera",
     "pyzbar",
     "pillow",
+    "flet-permission-handler",
 ]
 
 [tool.flet.android.permission]
