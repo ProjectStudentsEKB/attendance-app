@@ -86,10 +86,15 @@ def start_lesson(group_id, teacher_id, lat=None, lon=None):
 
 def get_lesson_coords(lesson_id):
     """Получает координаты занятия"""
-    res = supabase.table("lessons").select("latitude, longitude").eq("id", lesson_id).execute()
-    if res.data:
-        return res.data[0]["latitude"], res.data[0]["longitude"]
-    return None, None
+    try:
+        res = supabase.table("lessons").select("latitude, longitude").eq("id", lesson_id).execute()
+        if res.data:
+            return res.data[0]["latitude"], res.data[0]["longitude"]
+        return None, None
+    except Exception as e:
+        # Если lesson_id неверного формата (например, отсканировали штрих-код от шоколадки)
+        print(f"Ошибка при поиске занятия: {e}")
+        return None, None
 
 def finish_lesson(lesson_id):
     supabase.table("lessons").update({"is_active": False}).eq("id", lesson_id).execute()
