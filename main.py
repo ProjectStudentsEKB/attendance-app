@@ -731,11 +731,9 @@ async def main(page: ft.Page):
             status_msg.color = ft.Colors.BLUE
             page.update()
 
-            # 1. Создаем и регистрируем PermissionHandler
+            # 1. Запрашиваем разрешение на камеру
             ph = fph.PermissionHandler()
-            page.services.append(ph)  # Обязательная регистрация
-
-            # 2. Запрашиваем разрешение на камеру (новый API: request + Permission)
+            page.services.append(ph)
             try:
                 await ph.request(fph.Permission.CAMERA)
             except Exception as ex:
@@ -744,7 +742,7 @@ async def main(page: ft.Page):
                 page.update()
                 return
 
-            # 3. Получаем координаты студента
+            # 2. Получаем координаты студента
             geo = fg.Geolocator()
             try:
                 pos = await geo.get_current_position_async()
@@ -753,17 +751,19 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            # 4. Создаем контрол камеры
+            # 3. Создаем камеру и ДОБАВЛЯЕМ её в overlay страницы
             camera = fc.Camera(expand=True, preview_enabled=True)
-            active_camera["ref"] = camera
+            page.overlay.append(camera)  # Обязательный шаг для Flet 1.0
+            page.update()
 
-            # 5. Инициализируем камеру перед использованием
+            # 4. Инициализируем камеру
             try:
                 cameras = await camera.get_available_cameras()
                 if not cameras:
                     status_msg.value = "Камера не найдена на устройстве."
                     status_msg.color = ft.Colors.RED
                     page.update()
+                    page.overlay.remove(camera) # Убираем камеру
                     return
                 await camera.initialize(
                     description=cameras[0],
@@ -773,9 +773,10 @@ async def main(page: ft.Page):
                 status_msg.value = f"Ошибка инициализации камеры: {ex}"
                 status_msg.color = ft.Colors.RED
                 page.update()
+                page.overlay.remove(camera) # Убираем камеру
                 return
 
-            # 6. Диалог с камерой и кнопкой сканирования
+            # 5. Функция сканирования (камера уже инициализирована)
             async def capture_and_scan(e):
                 try:
                     picture = await camera.take_picture()
@@ -784,7 +785,9 @@ async def main(page: ft.Page):
                     
                     if decoded_objects:
                         qr_data = decoded_objects[0].data.decode("utf-8")
-                        page.pop_dialog()  # Закрываем камеру
+                        page.pop_dialog()  # Закрываем диалог
+                        page.overlay.remove(camera)  # Убираем камеру из overlay
+                        page.update()
                         await handle_qr_data(qr_data, student_lat, student_lon)
                     else:
                         status_msg.value = "QR-код не найден. Попробуйте еще раз."
@@ -794,13 +797,20 @@ async def main(page: ft.Page):
                     status_msg.value = f"Ошибка сканирования: {ex}"
                     status_msg.color = ft.Colors.RED
                     page.update()
+                    page.pop_dialog()
+                    page.overlay.remove(camera)
 
+            # 6. Открываем диалог с камерой
             page.show_dialog(ft.AlertDialog(
                 title=ft.Text("Наведите камеру на QR-код и нажмите 'Сканировать'"),
                 content=camera,
                 actions=[
                     ft.Button("Сканировать", on_click=capture_and_scan),
-                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
+                    ft.TextButton("Отмена", on_click=lambda e: (
+                        page.pop_dialog(),
+                        page.overlay.remove(camera),
+                        page.update()
+                    ))
                 ]
             ))
         async def handle_qr_data(qr_data, student_lat, student_lon):
