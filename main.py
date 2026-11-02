@@ -751,35 +751,13 @@ async def main(page: ft.Page):
             except Exception:
                 student_lat, student_lon = None, None
 
-            # 3. Создаем камеру и добавляем в overlay (обязательно для Flet 1.0)
-            camera = fc.Camera(expand=True, preview_enabled=True)
-            page.overlay.append(camera)
-            page.update()
-
-            # 4. Инициализируем
-            try:
-                cameras = await camera.get_available_cameras()
-                if not cameras:
-                    status_msg.value = "Камера не найдена."
-                    status_msg.color = ft.Colors.RED
-                    page.update()
-                    page.overlay.remove(camera)
-                    return
-                await camera.initialize(
-                    description=cameras[0],
-                    resolution_preset=fc.ResolutionPreset.MEDIUM
-                )
-            except Exception as ex:
-                status_msg.value = f"Ошибка камеры: {ex}"
-                status_msg.color = ft.Colors.RED
-                page.update()
-                page.overlay.remove(camera)
-                return
-
-            # Текст для диалогового окна (чтобы показывать ошибки не закрывая камеру)
+            # 3. Создаем камеру с ФИКСИРОВАННЫМ размером (без expand=True)
+            camera = fc.Camera(preview_enabled=True, width=350, height=400)
+            
+            # Текст для отображения ошибок внутри окна камеры
             dialog_status = ft.Text("", color=ft.Colors.RED, weight=ft.FontWeight.BOLD)
 
-            # 5. Функция сканирования
+            # 4. Функция, которая срабатывает при нажатии кнопки "Сканировать"
             async def capture_and_scan(e):
                 dialog_status.value = "Сканирование..."
                 dialog_status.color = ft.Colors.BLUE
@@ -791,58 +769,71 @@ async def main(page: ft.Page):
                     decoded_objects = decode(image)
                     
                     if not decoded_objects:
-                        dialog_status.value = "❌ QR-код не распознан. Наведите камеру ближе и попробуйте снова."
+                        dialog_status.value = "❌ QR-код не распознан. Наведите ближе."
                         dialog_status.color = ft.Colors.RED
                         page.update()
                         return
                     
                     qr_data = decoded_objects[0].data.decode("utf-8")
                     
-                    # --- ПРОВЕРКА ФОРМАТА ---
+                    # Проверка 1: Правильный ли формат (ID_занятия:время)
                     parts = qr_data.split(":")
                     if len(parts) != 2:
-                        dialog_status.value = "❌ Неверный формат QR-кода (это не код нашей системы)."
+                        dialog_status.value = "❌ Неверный формат (это не код системы)."
                         dialog_status.color = ft.Colors.RED
                         page.update()
                         return
                     
                     lesson_id = parts[0]
                     
-                    # --- ПРОВЕРКА СУЩЕСТВОВАНИЯ ЗАНЯТИЯ ---
+                    # Проверка 2: Существует ли такое занятие в базе
                     lesson_coords = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
                     if not lesson_coords or (lesson_coords[0] is None and lesson_coords[1] is None):
-                        # Если занятия нет в базе
-                        dialog_status.value = "❌ Это неактивный QR-код или занятие не найдено."
+                        dialog_status.value = "❌ Неактивный QR-код или занятие не найдено."
                         dialog_status.color = ft.Colors.RED
                         page.update()
                         return
                     
-                    # Если дошли сюда, значит QR валидный. Закрываем камеру.
+                    # Если проверки пройдены - закрываем камеру
                     page.pop_dialog()
-                    page.overlay.remove(camera)
                     page.update()
                     
-                    # Передаем в обработку
+                    # Передаем данные дальше (проверка GPS и запись в базу)
                     await handle_qr_data(qr_data, student_lat, student_lon)
 
                 except Exception as ex:
-                    dialog_status.value = f"Ошибка при снимке: {ex}"
+                    dialog_status.value = f"❌ Ошибка при снимке: {ex}"
                     dialog_status.color = ft.Colors.RED
                     page.update()
 
-            # 6. Открываем диалог
-            page.show_dialog(ft.AlertDialog(
+            # 5. Создаем само окно
+            dialog = ft.AlertDialog(
                 title=ft.Text("Наведите камеру на QR-код"),
-                content=ft.Column([camera, dialog_status], tight=True),
+                content=ft.Column([camera, dialog_status], tight=True, alignment=ft.MainAxisAlignment.CENTER),
                 actions=[
                     ft.Button("Сканировать", on_click=capture_and_scan),
-                    ft.TextButton("Отмена", on_click=lambda e: (
-                        page.pop_dialog(),
-                        page.overlay.remove(camera),
-                        page.update()
-                    ))
+                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
                 ]
-            ))
+            )
+
+            # 6. Сначала ПОКАЗЫВАЕМ окно
+            page.show_dialog(dialog)
+            page.update()
+
+            # 7. И только ПОТОМ инициализируем камеру (когда она уже на экране)
+            try:
+                cameras = await camera.get_available_cameras()
+                if not cameras:
+                    dialog_status.value = "Камера не найдена на устройстве."
+                    page.update()
+                    return
+                await camera.initialize(
+                    description=cameras[0],
+                    resolution_preset=fc.ResolutionPreset.MEDIUM
+                )
+            except Exception as ex:
+                dialog_status.value = f"Ошибка инициализации: {ex}"
+                page.update()
 
         async def handle_qr_data(qr_data, student_lat, student_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
