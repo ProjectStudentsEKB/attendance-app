@@ -31,11 +31,11 @@ async def main(page: ft.Page):
     # ЭКРАН ВХОДА
     # ==========================================================
     def build_login():
-        email_field = ft.TextField(label="Email", width=320)
-        password_field = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=320)
+        email_field = ft.TextField(label="Email", expand=True)
+        password_field = ft.TextField(label="Пароль", password=True, can_reveal_password=True, expand=True)
         error_text = ft.Text("", color=ft.Colors.RED)
         
-        login_btn = ft.Button("Войти", width=320)
+        login_btn = ft.Button("Войти", expand=True)
         loading_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
         
         async def on_login(e):
@@ -80,7 +80,7 @@ async def main(page: ft.Page):
                     loading_ring.visible = False
                     page.update()
             except Exception as ex:
-                error_text.value = f"Ошибка сети: Проверьте интернет"
+                error_text.value = f"Ошибка сети: {ex}"
                 login_btn.content = "Войти"
                 login_btn.disabled = False
                 loading_ring.visible = False
@@ -99,7 +99,7 @@ async def main(page: ft.Page):
                 email_field, password_field, error_text,
                 login_btn,
                 ft.TextButton("Ещё нет аккаунта? Зарегистрироваться", on_click=goto_register),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10, scroll=ft.ScrollMode.AUTO),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
         )
 
@@ -109,8 +109,8 @@ async def main(page: ft.Page):
     def build_register():
         current_role = state["reg_role"]
         
-        email_field = ft.TextField(label="Email", width=400, value=state["reg_email"])
-        password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, width=400, value=state["reg_password"])
+        email_field = ft.TextField(label="Email", expand=True, value=state["reg_email"])
+        password_field = ft.TextField(label="Пароль (мин. 6 символов)", password=True, can_reveal_password=True, expand=True, value=state["reg_password"])
         
         def on_role_change(e):
             state["reg_role"] = e.control.value
@@ -119,7 +119,7 @@ async def main(page: ft.Page):
             render() 
 
         role_dropdown = ft.Dropdown(
-            label="Кто вы?", width=400, value=current_role,
+            label="Кто вы?", expand=True, value=current_role,
             options=[
                 ft.DropdownOption(key="student", text="Студент"),
                 ft.DropdownOption(key="teacher", text="Преподаватель"),
@@ -129,13 +129,13 @@ async def main(page: ft.Page):
 
         error_text = ft.Text("", color=ft.Colors.RED)
         
-        register_btn = ft.Button("Зарегистрироваться", width=400)
+        register_btn = ft.Button("Зарегистрироваться", expand=True)
         loading_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
 
         if current_role == "student":
-            group_dd = ft.Dropdown(label="Выберите группу", width=400)
-            student_dd = ft.Dropdown(label="Выберите свое ФИО", width=400)
-            code_field = ft.TextField(label="Персональный код (из деканата)", width=400)
+            group_dd = ft.Dropdown(label="Выберите группу", expand=True)
+            student_dd = ft.Dropdown(label="Выберите свое ФИО", expand=True)
+            code_field = ft.TextField(label="Персональный код (из деканата)", expand=True)
             
             # Безопасная загрузка групп
             try:
@@ -221,7 +221,7 @@ async def main(page: ft.Page):
                     state["reg_role"] = "student"
                     render()
                 except Exception as ex:
-                    error_text.value = "Ошибка сети при регистрации"
+                    error_text.value = f"Ошибка: {ex}"
                     register_btn.content = "Зарегистрироваться"
                     register_btn.disabled = False
                     loading_ring.visible = False
@@ -231,8 +231,8 @@ async def main(page: ft.Page):
             register_btn.on_click = on_register
 
         else:
-            full_name_field = ft.TextField(label="ФИО Преподавателя", width=400)
-            teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, width=400)
+            full_name_field = ft.TextField(label="ФИО Преподавателя", expand=True)
+            teacher_code_field = ft.TextField(label="Секретный код преподавателя", password=True, can_reveal_password=True, expand=True)
 
             async def on_register(e):
                 error_text.value = ""
@@ -278,8 +278,8 @@ async def main(page: ft.Page):
                         register_btn.disabled = False
                         loading_ring.visible = False
                         page.update()
-                except Exception:
-                    error_text.value = "Ошибка сети"
+                except Exception as ex:
+                    error_text.value = f"Ошибка: {ex}"
                     register_btn.content = "Зарегистрироваться"
                     register_btn.disabled = False
                     loading_ring.visible = False
@@ -302,7 +302,7 @@ async def main(page: ft.Page):
                 error_text,
                 register_btn,
                 ft.TextButton("Уже есть аккаунт? Войти", on_click=goto_login),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, spacing=10, scroll=ft.ScrollMode.AUTO),
             alignment=ft.Alignment.CENTER, expand=True, padding=30,
         )
 
@@ -318,7 +318,7 @@ async def main(page: ft.Page):
             ft.Text("Выберите раздел в меню слева."),
         ], spacing=20)
 
-        group_name_field = ft.TextField(label="Название группы", hint_text="ИС-21", width=300)
+        group_name_field = ft.TextField(label="Название группы", hint_text="ИС-21", expand=True)
         groups_list = ft.Column(spacing=10)
 
         # Делаем асинхронным!
@@ -398,13 +398,13 @@ async def main(page: ft.Page):
             students_list,
         ], spacing=20, scroll=ft.ScrollMode.AUTO)
 
-        lesson_group_dd = ft.Dropdown(label="Группа", width=320, options=[])
+        lesson_group_dd = ft.Dropdown(label="Группа", expand=True, options=[])
         lesson_status = ft.Text("", weight=ft.FontWeight.BOLD)
         
         qr_lesson_id = {"value": None}
         qr_lesson_info = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         BLANK_IMG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-        qr_image = ft.Image(src=BLANK_IMG, width=320, height=320, fit=ft.BoxFit.CONTAIN)
+        qr_image = ft.Image(src=BLANK_IMG, height=320, fit=ft.BoxFit.CONTAIN)
         qr_countdown = ft.Text("", size=14, color=ft.Colors.GREY)
         qr_attendees_count = ft.Text("", size=15, weight=ft.FontWeight.BOLD)
         qr_attendees_list = ft.Column(spacing=5)
@@ -538,7 +538,7 @@ async def main(page: ft.Page):
             ft.Text("Выбери группу. Дата и время проставятся автоматически.", color=ft.Colors.GREY),
             ft.Divider(), ft.Row([lesson_group_dd]), ft.Container(height=10),
             ft.Button("▶  Начать занятие", icon=ft.Icons.PLAY_ARROW, on_click=on_start_lesson,
-                style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, padding=20), width=320),
+                style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, padding=20), expand=True),
             lesson_status,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
 
@@ -556,7 +556,7 @@ async def main(page: ft.Page):
             ], spacing=10),
         ], spacing=12, scroll=ft.ScrollMode.AUTO)
 
-        stats_group_dd = ft.Dropdown(label="Выберите группу", width=300, options=[])
+        stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
 
@@ -919,7 +919,7 @@ async def main(page: ft.Page):
     def build_admin_app():
         user = state["user"]
         
-        search_field = ft.TextField(label="Поиск по ФИО", width=400, hint_text="Введите имя...")
+        search_field = ft.TextField(label="Поиск по ФИО", expand=True, hint_text="Введите имя...")
         students_list = ft.Column(spacing=10)
 
         async def refresh_students(e=None):
