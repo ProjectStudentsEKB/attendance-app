@@ -504,8 +504,8 @@ async def main(page: ft.Page):
                 refresh_qr()
                 await refresh_attendees()
                 start_qr_auto_refresh()
-            except:
-                lesson_status.value = "Ошибка сети"
+            except Exception as ex:
+                lesson_status.value = f"Ошибка: {ex}"
                 lesson_status.color = ft.Colors.RED
                 page.update()
 
