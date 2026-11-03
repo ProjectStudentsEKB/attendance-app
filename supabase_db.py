@@ -2,8 +2,8 @@ from supabase import create_client
 import time  # добавь в самый верх файла, если его нет
 
 # ТВОИ ДАННЫЕ (URL уже правильный, ключ вставь свой)
-SUPABASE_URL = "https://qmtblohchywocxempwhi.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtdGJsb2hjaHl3b2N4ZW1wd2hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMjQ2NzUsImV4cCI6MjEwNzcwMDY3NX0.uHThi1J4DKW3rVyjGF6zK6xzaERDXQABdyxFFVk9TX8" 
+SUPABASE_URL = "https://ezmwldbzhdgbgqawcoxj.supabase.co/rest/v1/"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6bXdsZGJ6aGRnYmdxYXdjb3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2NzUyNjcsImV4cCI6MjEwOTI1MTI2N30.RhAVHbSn0sA4DYVsdrgV4Q9e11AFUR5ksqOSYUVBYSY" 
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
