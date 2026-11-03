@@ -497,7 +497,7 @@ async def main(page: ft.Page):
                 now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
                 
                 qr_lesson_id["value"] = lid
-                gname = next((g["name"] for g in lesson_group_dd.options if g.key == gid), "Группа")
+                gname = next((opt.text for opt in lesson_group_dd.options if opt.key == gid), "Группа")
                 qr_lesson_info.value = f"Группа: {gname} | Начато: {now_str}"
                 
                 await switch_screen(5)
