@@ -786,20 +786,31 @@ async def main(page: ft.Page):
                     
                     lesson_id = parts[0]
                     
-                    # Проверка 2: Существует ли такое занятие в базе
-                    lesson_coords = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
-                    if not lesson_coords or (lesson_coords[0] is None and lesson_coords[1] is None):
-                        dialog_status.value = "❌ Неактивный QR-код или занятие не найдено."
+                    # Проверка 2: Существует ли занятие и активно ли оно
+                    lesson = await asyncio.to_thread(db.get_lesson_details, lesson_id)
+                    
+                    if not lesson:
+                        dialog_status.value = "❌ Занятие не найдено в базе."
                         dialog_status.color = ft.Colors.RED
                         page.update()
                         return
+                        
+                    if not lesson["is_active"]:
+                        dialog_status.value = "❌ Преподаватель уже завершил это занятие."
+                        dialog_status.color = ft.Colors.RED
+                        page.update()
+                        return
+                    
+                    # Сохраняем координаты преподавателя (даже если они пустые)
+                    lesson_lat = lesson["latitude"]
+                    lesson_lon = lesson["longitude"]
                     
                     # Если проверки пройдены - закрываем камеру
                     page.pop_dialog()
                     page.update()
                     
                     # Передаем данные дальше (проверка GPS и запись в базу)
-                    await handle_qr_data(qr_data, student_lat, student_lon)
+                    await handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon)
 
                 except Exception as ex:
                     dialog_status.value = f"❌ Ошибка при снимке: {ex}"
@@ -835,7 +846,7 @@ async def main(page: ft.Page):
                 dialog_status.value = f"Ошибка инициализации: {ex}"
                 page.update()
 
-        async def handle_qr_data(qr_data, student_lat, student_lon):
+        async def handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
             status_msg.color = ft.Colors.BLUE
             page.update()
@@ -845,10 +856,8 @@ async def main(page: ft.Page):
             qr_timestamp = parts[1]
 
             try:
-                lesson_lat, lesson_lon = await asyncio.to_thread(db.get_lesson_coords, lesson_id)
-                
-                # Проверка расстояния
                 is_close = True
+                # Проверяем GPS только если координаты ЕСТЬ и у препода, и у студента
                 if lesson_lat and lesson_lon and student_lat and student_lon:
                     R = 6371000
                     phi1, phi2 = math.radians(lesson_lat), math.radians(student_lat)
@@ -859,6 +868,8 @@ async def main(page: ft.Page):
                     
                     if distance > 70: # Если больше 70 метров
                         is_close = False
+                else:
+                    print("Внимание: GPS не сработал. Отметка без проверки расстояния.")
 
                 if not is_close:
                     status_msg.value = "❌ Вы находитесь слишком далеко от аудитории!"
@@ -868,9 +879,14 @@ async def main(page: ft.Page):
                 
                 # Отмечаем
                 success, msg = await asyncio.to_thread(db.mark_student_present, lesson_id, user["id"], qr_timestamp)
+                
                 if success:
                     status_msg.value = "✅ " + msg
-                    status_msg.color = ft.Colors.GREEN
+                    # Если студент уже отмечался, делаем текст синим, а не красным
+                    if "уже отмечен" in msg.lower():
+                        status_msg.color = ft.Colors.BLUE
+                    else:
+                        status_msg.color = ft.Colors.GREEN
                     await refresh()
                 else:
                     status_msg.value = "❌ Ошибка: " + msg
