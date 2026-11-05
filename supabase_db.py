@@ -105,10 +105,20 @@ def get_attendance(lesson_id):
     return [row["student_id"] for row in res.data]
 
 def mark_all_present(lesson_id, student_ids):
-    """Для теста: отмечает всех студентов группы"""
-    data = [{"lesson_id": lesson_id, "student_id": sid} for sid in student_ids]
-    if data:
-        supabase.table("attendance").insert(data).execute()
+    try:
+        # Получаем список тех, кто уже отметился
+        res = supabase.table("attendance").select("student_id").eq("lesson_id", lesson_id).execute()
+        existing = {r["student_id"] for r in res.data}
+        
+        # Формируем список только для тех, кого еще нет в базе
+        data = [{"lesson_id": lesson_id, "student_id": sid, "status": "present"} for sid in student_ids if sid not in existing]
+        
+        if data:
+            supabase.table("attendance").insert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Ошибка при массовой отметке: {e}")
+        return False
 
 # ============== СТАТИСТИКА ==============
 
