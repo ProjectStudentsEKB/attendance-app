@@ -277,3 +277,13 @@ def get_group_stats(group_id):
 def get_setting(key):
     res = supabase.table("settings").select("value").eq("key", key).execute()
     return res.data[0]["value"] if res.data else None
+
+def get_lesson_details(lesson_id):
+    """Проверяет, существует ли занятие и активно ли оно"""
+    try:
+        res = supabase.table("lessons").select("is_active, latitude, longitude").eq("id", lesson_id).execute()
+        if res.data:
+            return res.data[0]
+        return None
+    except Exception:
+        return None
