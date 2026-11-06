@@ -16,6 +16,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
       - name: Install Flet and dependencies
         run: |
           python -m pip install --upgrade pip
