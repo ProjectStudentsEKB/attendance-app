@@ -29,7 +29,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build APK
-        run: flet build apk --yes
+        run: flet build apk --yes --skip-flutter-doctor
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
