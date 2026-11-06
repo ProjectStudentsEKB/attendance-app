@@ -9,9 +9,9 @@ from datetime import datetime
 import math
 import flet_geolocator as fg
 import flet_camera as fc
-#from pyzbar.pyzbar import decode
-#from PIL import Image
-#import io
+from pyzbar.pyzbar import decode
+from PIL import Image
+import io
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -727,10 +727,119 @@ async def main(page: ft.Page):
         active_camera = {"ref": None}
 
         async def scan_qr(e):
-            status_msg.value = "Сканер временно отключен для сборки"
+            status_msg.value = "Запрос доступа к камере и GPS..."
             status_msg.color = ft.Colors.BLUE
             page.update()
-            return
+
+            # 1. Запрашиваем разрешение на камеру
+            ph = fph.PermissionHandler()
+            page.services.append(ph)
+            try:
+                await ph.request(fph.Permission.CAMERA)
+            except Exception as ex:
+                status_msg.value = f"Нет разрешения на камеру: {ex}"
+                status_msg.color = ft.Colors.RED
+                page.update()
+                return
+
+            # 2. Получаем координаты
+            geo = fg.Geolocator()
+            try:
+                pos = await geo.get_current_position_async()
+                student_lat = pos.latitude if pos else None
+                student_lon = pos.longitude if pos else None
+            except Exception:
+                student_lat, student_lon = None, None
+
+            # 3. Создаем камеру
+            camera = fc.Camera(preview_enabled=True, width=350, height=400)
+            dialog_status = ft.Text("", color=ft.Colors.RED, weight=ft.FontWeight.BOLD)
+
+            # 4. Функция сканирования
+            async def capture_and_scan(e):
+                dialog_status.value = "Сканирование..."
+                dialog_status.color = ft.Colors.BLUE
+                page.update()
+
+                try:
+                    picture = await camera.take_picture()
+                    image = Image.open(io.BytesIO(picture))
+                    decoded_objects = decode(image)
+                    
+                    if not decoded_objects:
+                        dialog_status.value = "❌ QR-код не распознан. Наведите ближе."
+                        dialog_status.color = ft.Colors.RED
+                        page.update()
+                        return
+                    
+                    qr_data = decoded_objects[0].data.decode("utf-8")
+                    
+                    # Проверка 1: Правильный ли формат
+                    parts = qr_data.split(":")
+                    if len(parts) != 2:
+                        dialog_status.value = "❌ Неверный формат (это не код системы)."
+                        dialog_status.color = ft.Colors.RED
+                        page.update()
+                        return
+                    
+                    lesson_id = parts[0]
+                    
+                    # Проверка 2: Существует ли занятие и активно ли оно
+                    lesson = await asyncio.to_thread(db.get_lesson_details, lesson_id)
+                    
+                    if not lesson:
+                        dialog_status.value = "❌ Занятие не найдено в базе."
+                        dialog_status.color = ft.Colors.RED
+                        page.update()
+                        return
+                        
+                    if not lesson["is_active"]:
+                        dialog_status.value = "❌ Преподаватель уже завершил это занятие."
+                        dialog_status.color = ft.Colors.RED
+                        page.update()
+                        return
+                    
+                    lesson_lat = lesson["latitude"]
+                    lesson_lon = lesson["longitude"]
+                    
+                    # Если всё ок - закрываем камеру и отмечаемся
+                    page.pop_dialog()
+                    page.update()
+                    
+                    await handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon)
+
+                except Exception as ex:
+                    dialog_status.value = f"❌ Ошибка при снимке: {ex}"
+                    dialog_status.color = ft.Colors.RED
+                    page.update()
+
+            # 5. Окно камеры
+            dialog = ft.AlertDialog(
+                title=ft.Text("Наведите камеру на QR-код"),
+                content=ft.Column([camera, dialog_status], tight=True, alignment=ft.MainAxisAlignment.CENTER),
+                actions=[
+                    ft.Button("Сканировать", on_click=capture_and_scan),
+                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
+                ]
+            )
+
+            page.show_dialog(dialog)
+            page.update()
+
+            # 6. Инициализация камеры
+            try:
+                cameras = await camera.get_available_cameras()
+                if not cameras:
+                    dialog_status.value = "Камера не найдена."
+                    page.update()
+                    return
+                await camera.initialize(
+                    description=cameras[0],
+                    resolution_preset=fc.ResolutionPreset.MEDIUM
+                )
+            except Exception as ex:
+                dialog_status.value = f"Ошибка инициализации: {ex}"
+                page.update()
 
         async def handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
