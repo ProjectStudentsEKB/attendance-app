@@ -9,9 +9,9 @@ from datetime import datetime
 import math
 import flet_geolocator as fg
 import flet_camera as fc
-from pyzbar.pyzbar import decode
-from PIL import Image
-import io
+#from pyzbar.pyzbar import decode
+#from PIL import Image
+#import io
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -727,10 +727,11 @@ async def main(page: ft.Page):
         active_camera = {"ref": None}
 
         async def scan_qr(e):
-            status_msg.value = "Запрос доступа к камере и GPS..."
+            status_msg.value = "Сканер временно отключен для сборки"
             status_msg.color = ft.Colors.BLUE
             page.update()
-
+            return
+"""
             # 1. Запрашиваем разрешение на камеру
             ph = fph.PermissionHandler()
             page.services.append(ph)
@@ -845,7 +846,7 @@ async def main(page: ft.Page):
             except Exception as ex:
                 dialog_status.value = f"Ошибка инициализации: {ex}"
                 page.update()
-
+"""
         async def handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon):
             status_msg.value = "QR распознан! Проверяю геолокацию..."
             status_msg.color = ft.Colors.BLUE
