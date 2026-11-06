@@ -8,12 +8,14 @@ dependencies = [
     "segno",
     "flet-geolocator",
     "flet-camera",
-    "flet-permission-handler",
+    "flet-permission-handler>=0.2.0",
+    "pyzbar",
+    "pillow"
 ]
 
-[tool.flet]
-product = "Attendance App"
-org = "com.attendance"
+# ВАЖНО: Указываем Flet распаковать pyzbar для Android
+[tool.flet.android]
+extract_packages = ["pyzbar"]
 
 [tool.flet.android.permission]
 "android.permission.CAMERA" = true
