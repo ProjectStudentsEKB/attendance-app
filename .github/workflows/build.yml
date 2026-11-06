@@ -17,12 +17,10 @@ jobs:
           python-version: '3.12'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
+          packages: 'platform-tools'
           accept-android-sdk-licenses: true
-
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses || true
 
       - name: Install Flet and dependencies
         run: |
