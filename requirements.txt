@@ -1,8 +1,0 @@
-flet>=0.86.0
-supabase
-segno
-flet-geolocator
-flet-camera
-flet-permission-handler>=0.2.0
-pyzbar
-pillow
