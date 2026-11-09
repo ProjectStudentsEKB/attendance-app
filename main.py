@@ -572,6 +572,11 @@ async def main(page: ft.Page):
             ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
             
         ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
+        stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        stats_list = ft.Column(spacing=8)
+
+        
 
         async def refresh_stats_groups():
             stats_group_dd.options.clear()
