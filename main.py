@@ -543,35 +543,39 @@ async def main(page: ft.Page):
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
 
         qr_screen = ft.Column([
+            # --- ВЕРХНЯЯ ЧАСТЬ (QR-код всегда виден) ---
             ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: (stop_qr_auto_refresh(), page.run_task(switch_screen, 3))),
                     ft.Text("📱 QR-код занятия", size=22, weight=ft.FontWeight.BOLD)]),
-            qr_lesson_info, ft.Divider(),
             
-            # Картинка QR-кода адаптируется под размер экрана
+            qr_lesson_info, 
+            
             ft.Container(
                 content=qr_image, 
                 alignment=ft.Alignment.CENTER, 
-                padding=10, 
-                height=250  # Фиксированная высота, чтобы не выдавливать кнопки
+                padding=5, 
+                height=300 # Увеличили QR-код
             ),
             
             ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), page.run_task(refresh_attendees)))], alignment=ft.MainAxisAlignment.CENTER),
-            ft.Divider(), 
-            qr_attendees_count, 
             
-            # Список студентов
-            qr_attendees_list, 
+            ft.Divider(height=1),
             
-            ft.Container(height=10),
-            
-            # КНОПКИ: Теперь они в колонке (друг под другом) и не уезжают за экран!
+            # --- НИЖНЯЯ ПРОКРУЧИВАЕМАЯ ЧАСТЬ (Список и кнопки) ---
             ft.Column([
-                ft.Button("✅ Отметить всех вручную", on_click=on_mark_all, width=300),
-                ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
-                          style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE), width=300),
-            ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                qr_attendees_count, 
+                qr_attendees_list, 
+                ft.Container(height=10), 
+                
+                ft.Column([
+                    ft.Button("✅ Отметить всех вручную", on_click=on_mark_all, width=320),
+                    ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
+                              style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE), width=320),
+                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                
+            ], spacing=10, expand=True, scroll=ft.ScrollMode.AUTO) 
             
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        ], spacing=10, expand=True)
+        
         stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
