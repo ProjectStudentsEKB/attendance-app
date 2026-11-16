@@ -297,3 +297,46 @@ def get_lesson_details(lesson_id):
         return None
     except Exception:
         return None
+
+def get_advanced_stats(group_id=None, start_date=None, end_date=None):
+    """Статистика с фильтрацией по группе и датам (формат YYYY-MM-DD)"""
+    try:
+        # 1. Ищем занятия по фильтрам
+        query = supabase.table("lessons").select("id")
+        if group_id:
+            query = query.eq("group_id", group_id)
+        if start_date:
+            query = query.gte("created_at", start_date)
+        if end_date:
+            query = query.lte("created_at", f"{end_date}T23:59:59")
+            
+        lessons = query.execute()
+        lesson_ids = [l["id"] for l in lessons.data]
+        total_lessons = len(lesson_ids)
+        
+        if total_lessons == 0:
+            return [], 0
+            
+        # 2. Получаем студентов (если группа не указана, берем всех)
+        students_q = supabase.table("users").select("id, full_name").eq("role", "student")
+        if group_id:
+            students_q = students_q.eq("group_id", group_id)
+        students = students_q.execute().data
+
+        # 3. Считаем посещения
+        attendance = supabase.table("attendance").select("student_id").in_("lesson_id", lesson_ids).execute()
+        
+        result = []
+        for s in students:
+            present_count = sum(1 for a in attendance.data if a["student_id"] == s["id"])
+            percent = round((present_count / total_lessons * 100), 1)
+            result.append({
+                "full_name": s["full_name"],
+                "present": present_count,
+                "total": total_lessons,
+                "percent": percent
+            })
+        return result, total_lessons
+    except Exception as e:
+        print(f"Ошибка статистики: {e}")
+        return [], 0
