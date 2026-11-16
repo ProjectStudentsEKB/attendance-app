@@ -340,3 +340,75 @@ def get_advanced_stats(group_id=None, start_date=None, end_date=None):
     except Exception as e:
         print(f"Ошибка статистики: {e}")
         return [], 0
+
+def get_teacher_stats(teacher_id, start_date=None, end_date=None):
+    """Статистика ТОЛЬКО по занятиям конкретного преподавателя"""
+    try:
+        query = supabase.table("lessons").select("id").eq("teacher_id", teacher_id)
+        if start_date: query = query.gte("created_at", start_date)
+        if end_date: query = query.lte("created_at", f"{end_date}T23:59:59")
+        
+        lessons = query.execute()
+        lesson_ids = [l["id"] for l in lessons.data]
+        if not lesson_ids: return [], 0
+
+        # Получаем всех студентов, у которых были эти занятия
+        attendance = supabase.table("attendance").select("student_id, users(full_name, groups(name))").in_("lesson_id", lesson_ids).execute()
+        
+        # Группируем по студентам
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"name": k, "present": v, "total": len(lesson_ids), "percent": round(v/len(lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(lesson_ids)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return [], 0
+
+def get_admin_stats(group_id=None, program=None, student_name=None, start_date=None, end_date=None):
+    """Расширенная статистика для администратора"""
+    try:
+        # 1. Базовый запрос занятий
+        query = supabase.table("lessons").select("id, groups(program)")
+        if start_date: query = query.gte("created_at", start_date)
+        if end_date: query = query.lte("created_at", f"{end_date}T23:59:59")
+        
+        lessons = query.execute()
+        
+        # Фильтрация по группе или программе на стороне Python (т.к. Supabase не умеет глубокий JOIN в фильтрах)
+        valid_lesson_ids = []
+        for l in lessons.data:
+            if group_id and l["group_id"] != group_id: continue
+            if program and l.get("groups") and l["groups"]["program"] != program: continue
+            valid_lesson_ids.append(l["id"])
+            
+        if not valid_lesson_ids: return [], 0
+        
+        # 2. Запрос посещаемости
+        att_query = supabase.table("attendance").select("student_id, users(full_name, groups(name))").in_("lesson_id", valid_lesson_ids)
+        attendance = att_query.execute()
+        
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            
+            if student_name and student_name.lower() not in name.lower(): continue
+            
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"name": k, "present": v, "total": len(valid_lesson_ids), "percent": round(v/len(valid_lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(valid_lesson_ids)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return [], 0
+
+def get_all_programs():
+    """Получает список уникальных образовательных программ"""
+    res = supabase.table("groups").select("program").not_.is_("program", "null").execute()
+    return sorted(list(set([r["program"] for r in res.data if r["program"]])))
