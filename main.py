@@ -854,6 +854,7 @@ async def main(page: ft.Page):
                     
                     # Если всё ок - закрываем камеру и отмечаемся
                     page.pop_dialog()
+                    page.overlay.remove(camera) # <--- ДОБАВИТЬ ЭТО
                     page.update()
                     
                     await handle_qr_data(qr_data, student_lat, student_lon, lesson_lat, lesson_lon)
@@ -869,7 +870,7 @@ async def main(page: ft.Page):
                 content=ft.Column([camera, dialog_status], tight=True, alignment=ft.MainAxisAlignment.CENTER),
                 actions=[
                     ft.Button("Сканировать", on_click=capture_and_scan),
-                    ft.TextButton("Отмена", on_click=lambda e: page.pop_dialog())
+                    ft.TextButton("Отмена", on_click=lambda e: (page.pop_dialog(), page.overlay.remove(camera), page.update()))
                 ]
             )
 
@@ -1041,7 +1042,7 @@ async def main(page: ft.Page):
                 e_date = a_end_date.value if a_end_date.value else None
                 
                 # Для админа используем функцию get_advanced_stats, но без привязки к группе
-                stats, total = await asyncio.to_thread(db.get_admin_stats, prog, stud, s_date, e_date)
+                stats, total = await asyncio.to_thread(db.get_admin_stats, None, prog, stud, s_date, e_date)
                 
                 if total == 0:
                     a_summary.value = "Нет данных за выбранный период."
