@@ -437,7 +437,7 @@ async def main(page: ft.Page):
                 all_students = await asyncio.to_thread(db.get_students, lesson_group_dd.value)
                 present_ids = await asyncio.to_thread(db.get_attendance, qr_lesson_id["value"])
                 
-                qr_attendees_count.value = f"✅ Отметались: {len(present_ids)} из {len(all_students)}"
+                qr_attendees_count.value = f"✅ Отметились: {len(present_ids)} из {len(all_students)}"
 
                 if not present_ids:
                     qr_attendees_list.controls.append(ft.Text("Пока никто не отметился.", italic=True, color=ft.Colors.GREY, size=12))
@@ -556,12 +556,14 @@ async def main(page: ft.Page):
                 height=250 
             ),
             
-            # --- КНОПКИ ПОДНЯТЫ НАВЕРХ ---
-            ft.Row([
-                ft.Button("✅ Отметить вручную", on_click=on_mark_all),
+            # --- КНОПКИ ТЕПЕРЬ ДРУГ ПОД ДРУГОМ ---
+            ft.Column([
+                ft.Button("✅ Отметить вручную", on_click=on_mark_all, width=320),
                 ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
-                          style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE)),
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                          style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE), width=320),
+            ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            
+            ft.Divider(height=1),
             
             # --- ТАЙМЕР И СПИСОК УХОДЯТ ВНИЗ ---
             ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), page.run_task(refresh_attendees)))], alignment=ft.MainAxisAlignment.CENTER),
@@ -571,14 +573,40 @@ async def main(page: ft.Page):
             ft.Column([
                 qr_attendees_count, 
                 qr_attendees_list, 
-            ], expand=True, scroll=ft.ScrollMode.AUTO) 
+            ], spacing=10), 
             
-        ], spacing=10, expand=True)
+        ], spacing=10, scroll=ft.ScrollMode.AUTO) # Включаем прокрутку всему экрану
         
         # ---- СТАТИСТИКА ----
+        # ---- СТАТИСТИКА ----
         stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
-        stats_start_date = ft.TextField(label="С даты (ГГГГ-ММ-ДД)", hint_text="2026-10-01", expand=True)
-        stats_end_date = ft.TextField(label="По дату (ГГГГ-ММ-ДД)", hint_text="2026-12-31", expand=True)
+        
+        # Поля для дат (только для чтения, чтобы вводить можно было только через календарь)
+        stats_start_date = ft.TextField(label="С даты", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
+        stats_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
+        
+        # Создаем сами календари
+        start_date_picker = ft.DatePicker(
+            first_date=datetime(2024, 1, 1),
+            last_date=datetime(2030, 12, 31),
+            on_change=lambda e: on_date_change(e, stats_start_date)
+        )
+        end_date_picker = ft.DatePicker(
+            first_date=datetime(2024, 1, 1),
+            last_date=datetime(2030, 12, 31),
+            on_change=lambda e: on_date_change(e, stats_end_date)
+        )
+        # --- ВСТАВИТЬ ВОТ СЮДА ---
+        page.overlay.append(start_date_picker)
+        page.overlay.append(end_date_picker)
+        # -------------------------
+        
+        def on_date_change(e, textfield):
+            if e.control.value:
+                # Форматируем дату в нужный вид (ГГГГ-ММ-ДД)
+                textfield.value = e.control.value.strftime("%Y-%m-%d")
+                page.update()
+
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
 
@@ -647,15 +675,27 @@ async def main(page: ft.Page):
 
         stats_group_dd.on_select = lambda e: page.run_task(refresh_stats)
 
+        # Новый дизайн экрана статистики
         stats_screen = ft.Column([
             ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD),
             ft.Row([stats_group_dd], spacing=10),
-            ft.Row([stats_start_date, stats_end_date], spacing=10),
+            
+            # Поля с календарями
+            ft.Row([
+                stats_start_date,
+                ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(start_date_picker))
+            ], spacing=5),
+            ft.Row([
+                stats_end_date,
+                ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(end_date_picker))
+            ], spacing=5),
+            
             ft.Button("Показать статистику", icon=ft.Icons.SEARCH, on_click=refresh_stats, expand=True),
             ft.Divider(),
             stats_summary,
             stats_list,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
+
 
         screens = [home_screen, groups_screen, students_screen, lesson_screen, stats_screen, qr_screen]
         content_area = ft.Container(content=screens[0], padding=20, expand=True)
