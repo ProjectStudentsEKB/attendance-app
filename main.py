@@ -216,6 +216,10 @@ async def main(page: ft.Page):
                         "group_id": grp_id
                     }).eq("id", new_user_id).execute)
 
+                    # --- ДОБАВИТЬ ЭТУ СТРОКУ ---
+                    await asyncio.to_thread(db.bind_device, new_user_id, device_id)
+                    # ----------------------------
+
                     await asyncio.to_thread(db.sign_in, email, password)
                     state["user"] = await asyncio.to_thread(db.get_profile)
                     state["reg_role"] = "student"
@@ -270,6 +274,9 @@ async def main(page: ft.Page):
                     if success:
                         await asyncio.to_thread(db.sign_in, email, password)
                         state["user"] = await asyncio.to_thread(db.get_profile)
+                        # --- ДОБАВИТЬ ЭТУ СТРОКУ ---
+                        await asyncio.to_thread(db.bind_device, state["user"]["id"], device_id)
+                        # ----------------------------
                         state["reg_role"] = "student"
                         render()
                     else:
