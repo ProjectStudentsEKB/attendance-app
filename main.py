@@ -586,93 +586,58 @@ async def main(page: ft.Page):
         
         # ---- СТАТИСТИКА ----
         # ---- СТАТИСТИКА ----
-        stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
-        
-        # Поля для дат (только для чтения, чтобы вводить можно было только через календарь)
+        # ---- СТАТИСТИКА (Только для преподавателя) ----
         stats_start_date = ft.TextField(label="С даты", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
         stats_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
         
-        # Создаем сами календари
-        start_date_picker = ft.DatePicker(
-            first_date=datetime(2024, 1, 1),
-            last_date=datetime(2030, 12, 31),
-            on_change=lambda e: on_date_change(e, stats_start_date)
-        )
-        end_date_picker = ft.DatePicker(
-            first_date=datetime(2024, 1, 1),
-            last_date=datetime(2030, 12, 31),
-            on_change=lambda e: on_date_change(e, stats_end_date)
-        )
-        # --- ВСТАВИТЬ ВОТ СЮДА ---
-        page.overlay.append(start_date_picker)
-        page.overlay.append(end_date_picker)
-        # -------------------------
+        start_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_start_date))
+        end_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_end_date))
+        page.overlay.extend([start_date_picker, end_date_picker])
         
         def on_date_change(e, textfield):
             if e.control.value:
-                # Форматируем дату в нужный вид (ГГГГ-ММ-ДД)
                 textfield.value = e.control.value.strftime("%Y-%m-%d")
                 page.update()
 
+        def clear_dates(e):
+            stats_start_date.value = ""
+            stats_end_date.value = ""
+            page.run_task(refresh_my_stats)
+
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
-
-        async def refresh_stats_groups():
-            stats_group_dd.options.clear()
-            try:
-                groups = await asyncio.to_thread(db.get_groups)
-                for g in groups:
-                    stats_group_dd.options.append(ft.DropdownOption(key=g["id"], text=g["name"]))
-            except:
-                pass
-            page.update()
 
         def color_for(p):
             if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
             elif p >= 60: return ft.Colors.ORANGE, ft.Colors.ORANGE_50
             return ft.Colors.RED, ft.Colors.RED_50
 
-        async def refresh_stats(e=None):
+        async def refresh_my_stats(e=None):
             stats_list.controls.clear()
-            stats_summary.value = ""
-            if not stats_group_dd.value:
-                stats_summary.value = "Выберите группу"
-                page.update()
-                return
-                
+            stats_summary.value = "Загрузка..."
+            page.update()
             try:
-                s_date = stats_start_date.value.strip() if stats_start_date.value else None
-                e_date = stats_end_date.value.strip() if stats_end_date.value else None
+                s_date = stats_start_date.value if stats_start_date.value else None
+                e_date = stats_end_date.value if stats_end_date.value else None
                 
-                stats, total_lessons = await asyncio.to_thread(db.get_advanced_stats, stats_group_dd.value, s_date, e_date)
+                stats, total_lessons = await asyncio.to_thread(db.get_teacher_stats, user["id"], s_date, e_date)
                 
                 if total_lessons == 0:
-                    stats_summary.value = "⚠️ За выбранный период занятий не было"
+                    stats_summary.value = "⚠️ У вас еще нет проведенных занятий"
                     stats_summary.color = ft.Colors.ORANGE
                     page.update()
                     return
-                    
-                if not stats:
-                    stats_summary.value = "В группе нет зарегистрированных студентов."
-                    page.update()
-                    return
 
-                total_present_all = sum(s["present"] for s in stats)
-                total_possible = total_lessons * len(stats)
-                group_percent = round(total_present_all / total_possible * 100, 1) if total_possible else 0
-
-                stats_summary.value = f"📊 По группе: {group_percent}% ({len(stats)} студ., {total_lessons} занятий)"
+                stats_summary.value = f"📊 Ваши занятия: {total_lessons} шт. (Студентов: {len(stats)})"
                 stats_summary.color = ft.Colors.BLUE_700
 
                 for s in stats:
-                    p = s["percent"]
-                    color, bg = color_for(p)
+                    color, bg = color_for(s["percent"])
                     stats_list.controls.append(ft.Container(
                         content=ft.Row([
-                            ft.Text(s["full_name"], expand=True, size=15),
+                            ft.Text(s["name"], expand=True, size=15),
                             ft.Text(f"{s['present']} / {s['total']}", size=13, color=ft.Colors.GREY),
-                            ft.Container(content=ft.Text(f"{p}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
-                                         bgcolor=color, padding=10, border_radius=20),
+                            ft.Container(content=ft.Text(f"{s['percent']}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=color, padding=10, border_radius=20),
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         padding=10, bgcolor=bg, border_radius=8))
             except Exception as ex:
@@ -680,28 +645,34 @@ async def main(page: ft.Page):
                 stats_summary.color = ft.Colors.RED
             page.update()
 
-        stats_group_dd.on_select = lambda e: page.run_task(refresh_stats)
+        def export_report(e):
+            report = f"📊 ОТЧЕТ ПО ПОСЕЩАЕМОСТИ\nДаты: {stats_start_date.value or 'Все время'} - {stats_end_date.value or 'Все время'}\n\n"
+            for c in stats_list.controls:
+                text_elements = c.content.controls
+                report += f"{text_elements[0].value} | {text_elements[1].value} | {text_elements[2].content.value}\n"
+            page.set_clipboard(report)
+            page.show_dialog(ft.SnackBar(ft.Text("Отчет скопирован! Вставьте его в WhatsApp или заметки."), bgcolor=ft.Colors.GREEN))
 
-        # Новый дизайн экрана статистики
         stats_screen = ft.Column([
-            ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD),
-            ft.Row([stats_group_dd], spacing=10),
-            
-            # Поля с календарями
+            ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
             ft.Row([
-                stats_start_date,
-                ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(start_date_picker))
+                ft.Column([stats_start_date, ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(start_date_picker))], expand=True),
+                ft.Column([stats_end_date, ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(end_date_picker))], expand=True),
             ], spacing=5),
             ft.Row([
-                stats_end_date,
-                ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(end_date_picker))
+                ft.Button("Показать", icon=ft.Icons.SEARCH, on_click=refresh_my_stats, expand=True),
+                ft.Button("Сброс", icon=ft.Icons.CLEAR, on_click=clear_dates, expand=True),
+                ft.Button("Копировать", icon=ft.Icons.SHARE, on_click=export_report, expand=True),
             ], spacing=5),
-            
-            ft.Button("Показать статистику", icon=ft.Icons.SEARCH, on_click=refresh_stats, expand=True),
             ft.Divider(),
             stats_summary,
             stats_list,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
+
+       
+            
+            
+            
 
 
         screens = [home_screen, groups_screen, students_screen, lesson_screen, stats_screen, qr_screen]
@@ -719,7 +690,7 @@ async def main(page: ft.Page):
                 await refresh_lesson_groups()
             elif index == 4: 
                 nav.selected_index = 3
-                await refresh_stats_groups()
+                await refresh_my_stats() 
             if index == 1: await refresh_groups()
             if index == 2: await refresh_students()
             page.update()
@@ -1009,7 +980,8 @@ async def main(page: ft.Page):
     def build_admin_app():
         user = state["user"]
         
-        search_field = ft.TextField(label="Поиск по ФИО", expand=True, hint_text="Введите имя...")
+        # --- ВКЛАДКА 1: СТУДЕНТЫ ---
+        search_field = ft.TextField(label="Поиск по ФИО", expand=True)
         students_list = ft.Column(spacing=10)
 
         async def refresh_students(e=None):
@@ -1017,107 +989,127 @@ async def main(page: ft.Page):
             query = search_field.value.strip() if search_field.value else ""
             try:
                 students = await asyncio.to_thread(db.get_all_students_for_admin, query)
-                
                 if not students:
                     students_list.controls.append(ft.Text("Студенты не найдены.", italic=True, color=ft.Colors.GREY))
                     page.update()
                     return
-
                 for s in students:
-                    device_status = "✅ Привязан" if s.get("device_id") else "❌ Не привязан"
-                    reset_count = s.get("device_reset_count", 0)
+                    device_status = "✅" if s.get("device_id") else "❌"
                     group_name = s["groups"]["name"] if s.get("groups") else "Нет группы"
-                    
-                    count_text = f"⚠️ Сбросов: {reset_count}" if reset_count > 0 else "Сбросов: 0"
-                    count_color = ft.Colors.RED if reset_count > 0 else ft.Colors.GREY
-
-                    def make_reset_handler(sid):
-                        def reset_dev(e):
-                            page.run_task(do_reset, sid)
-                        return reset_dev
-
-                    students_list.controls.append(
-                        ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Icon(ft.Icons.PERSON),
-                                    ft.Text(s["full_name"], weight=ft.FontWeight.BOLD, size=16, expand=True),
-                                    ft.Text(f"({group_name})", color=ft.Colors.GREY, size=14),
-                                ]),
-                                ft.Row([
-                                    ft.Text(f"Email: {s['email']}", size=12),
-                                    ft.Text(f"| Телефон: {device_status}", size=12),
-                                    ft.Text(f"| {count_text}", size=12, color=count_color),
-                                    ft.Button(
-                                        "🔄 Сбросить телефон", 
-                                        on_click=make_reset_handler(s["id"]),
-                                        style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_100, color=ft.Colors.ORANGE_900)
-                                    )
-                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-                            ]),
-                            padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8,
-                            border=ft.border.all(1, ft.Colors.BLUE_200)
-                        )
-                    )
-            except:
-                students_list.controls.append(ft.Text("Ошибка сети", color=ft.Colors.RED))
+                    students_list.controls.append(ft.Container(
+                        content=ft.Column([
+                            ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(s["full_name"], weight=ft.FontWeight.BOLD, expand=True), ft.Text(f"({group_name})", color=ft.Colors.GREY, size=12)]),
+                            ft.Row([ft.Text(f"Тел: {device_status}", size=12), ft.Button("Сбросить", on_click=lambda e, sid=s["id"]: page.run_task(do_reset, sid), height=30)])
+                        ]), padding=10, bgcolor=ft.Colors.BLUE_50, border_radius=8))
+            except: pass
             page.update()
 
         async def do_reset(sid):
-            try:
-                if await asyncio.to_thread(db.reset_student_device, sid):
-                    page.show_dialog(ft.SnackBar(ft.Text("Устройство успешно сброшено!"), bgcolor=ft.Colors.GREEN))
-                    await refresh_students()
-            except:
-                pass
+            if await asyncio.to_thread(db.reset_student_device, sid):
+                page.show_dialog(ft.SnackBar(ft.Text("Устройство сброшено!"), bgcolor=ft.Colors.GREEN))
+                await refresh_students()
 
         search_field.on_change = lambda e: page.run_task(refresh_students)
-        
-        async def logout(e):
-            await asyncio.to_thread(db.sign_out)
-            state["user"] = None
-            state["view"] = "login"
-            render()
+        screen_students = ft.Column([
+            ft.Row([search_field, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: page.run_task(refresh_students))]),
+            students_list
+        ], scroll=ft.ScrollMode.AUTO, expand=True)
 
-        top_bar = ft.Container(
-            content=ft.Row([
-                ft.Text(f"👤 {user['email']} (Администратор)", color=ft.Colors.GREY, size=12),
-                ft.TextButton("Выйти", icon=ft.Icons.LOGOUT, on_click=logout),
-            ], alignment=ft.MainAxisAlignment.END),
-            padding=5, bgcolor=ft.Colors.GREY_100,
+        # --- ВКЛАДКА 2: ГЛОБАЛЬНАЯ СТАТИСТИКА ---
+        prog_dd = ft.Dropdown(label="Программа", expand=True, options=[ft.DropdownOption(key="", text="Все программы")])
+        for p in db.get_all_programs(): prog_dd.options.append(ft.DropdownOption(key=p, text=p))
+        
+        student_search = ft.TextField(label="Студент (ФИО)", hint_text="Оставьте пустым для всех", expand=True)
+        
+        a_start_date = ft.TextField(label="С даты", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
+        a_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
+        a_start_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_start_date))
+        a_end_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_end_date))
+        page.overlay.extend([a_start_picker, a_end_picker])
+        
+        a_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        a_list = ft.Column(spacing=8)
+
+        async def refresh_admin_stats(e=None):
+            a_list.controls.clear()
+            a_summary.value = "Анализ..."
+            page.update()
+            try:
+                prog = prog_dd.value if prog_dd.value else None
+                stud = student_search.value.strip() if student_search.value else None
+                s_date = a_start_date.value if a_start_date.value else None
+                e_date = a_end_date.value if a_end_date.value else None
+                
+                # Для админа используем функцию get_advanced_stats, но без привязки к группе
+                stats, total = await asyncio.to_thread(db.get_admin_stats, prog, stud, s_date, e_date)
+                
+                if total == 0:
+                    a_summary.value = "Нет данных за выбранный период."
+                    page.update()
+                    return
+                    
+                a_summary.value = f"📊 Всего занятий: {total} | Студентов: {len(stats)}"
+                
+                for s in stats:
+                    color, bg = color_for(s["percent"])
+                    a_list.controls.append(ft.Container(
+                        content=ft.Row([
+                            ft.Text(s["full_name"], expand=True, size=15),
+                            ft.Text(f"{s['percent']}% ({s['present']}/{s['total']})", weight=ft.FontWeight.BOLD, color=color),
+                        ]), padding=10, bgcolor=bg, border_radius=8))
+            except Exception as ex:
+                a_summary.value = f"Ошибка: {ex}"
+                a_summary.color = ft.Colors.RED
+            page.update()
+
+        def export_admin_report(e):
+            report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ\nПрограмма: {prog_dd.value or 'Все'}\nПериод: {a_start_date.value or 'Все'} - {a_end_date.value or 'Все'}\n\n"
+            for c in a_list.controls:
+                text_elements = c.content.controls
+                report += f"{text_elements[0].value} | {text_elements[1].value}\n"
+            page.set_clipboard(report)
+            page.show_dialog(ft.SnackBar(ft.Text("Отчет скопирован!"), bgcolor=ft.Colors.GREEN))
+
+        screen_stats = ft.Column([
+            ft.Row([prog_dd]),
+            ft.Row([student_search]),
+            ft.Row([
+                ft.Column([a_start_date, ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(a_start_picker))], expand=True),
+                ft.Column([a_end_date, ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=lambda e: page.show_dialog(a_end_picker))], expand=True),
+            ], spacing=5),
+            ft.Row([
+                ft.Button("Найти", icon=ft.Icons.SEARCH, on_click=refresh_admin_stats, expand=True),
+                ft.Button("Копировать", icon=ft.Icons.SHARE, on_click=export_admin_report, expand=True),
+            ]),
+            ft.Divider(), a_summary, a_list
+        ], scroll=ft.ScrollMode.AUTO, expand=True)
+
+        # --- НАВИГАЦИЯ АДМИНА ---
+        content_area = ft.Container(content=screen_students, expand=True, padding=10)
+        
+        def change_tab(e):
+            idx = e.control.selected_index
+            content_area.content = screen_students if idx == 0 else screen_stats
+            if idx == 0: page.run_task(refresh_students)
+            page.update()
+
+        admin_nav = ft.NavigationRail(
+            selected_index=0, label_type=ft.NavigationRailLabelType.NONE, min_width=60,
+            destinations=[
+                ft.NavigationRailDestination(icon=ft.Icons.PEOPLE, label="Студенты"),
+                ft.NavigationRailDestination(icon=ft.Icons.ANALYTICS, label="Статистика"),
+            ], on_change=change_tab,
         )
 
+        async def logout(e):
+            await asyncio.to_thread(db.sign_out)
+            state["user"] = None; state["view"] = "login"; render()
+
+        top_bar = ft.Container(content=ft.Row([ft.Text(f"👤 Админ"), ft.TextButton("Выйти", on_click=logout)]), bgcolor=ft.Colors.GREY_100)
+        
         page.run_task(refresh_students)
-
+        
         return ft.Column([
-            top_bar,
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🏛️ Панель Администратора", size=28, weight=ft.FontWeight.BOLD),
-                    ft.Text("Здесь вы можете управлять устройствами студентов.", color=ft.Colors.GREY),
-                    ft.Divider(),
-                    ft.Row([search_field, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: page.run_task(refresh_students))]),
-                    students_list
-                ], spacing=15, scroll=ft.ScrollMode.AUTO),
-                padding=30, expand=True,
-            ),
+            top_bar, 
+            ft.Row([admin_nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0)
         ], expand=True, spacing=0)
-
-    def render():
-        if state["user"] is None:
-            root.content = build_login() if state["view"] == "login" else build_register()
-        else:
-            role = state["user"]["role"]
-            if role == "admin":
-                root.content = build_admin_app()
-            elif role == "teacher":
-                root.content = build_teacher_app()
-            else:
-                root.content = build_student_app()
-        page.update()
-
-    page.add(root)
-    render()
-
-if __name__ == "__main__":
-    ft.run(main)
