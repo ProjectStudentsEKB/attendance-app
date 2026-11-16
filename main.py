@@ -543,36 +543,35 @@ async def main(page: ft.Page):
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
 
         qr_screen = ft.Column([
-            # --- ВЕРХНЯЯ ЧАСТЬ (QR-код всегда виден) ---
+            # Шапка
             ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: (stop_qr_auto_refresh(), page.run_task(switch_screen, 3))),
                     ft.Text("📱 QR-код занятия", size=22, weight=ft.FontWeight.BOLD)]),
-            
             qr_lesson_info, 
             
+            # QR-код
             ft.Container(
                 content=qr_image, 
                 alignment=ft.Alignment.CENTER, 
                 padding=5, 
-                height=300 # Увеличили QR-код
+                height=250 
             ),
             
-            ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), page.run_task(refresh_attendees)))], alignment=ft.MainAxisAlignment.CENTER),
+            # --- КНОПКИ ПОДНЯТЫ НАВЕРХ ---
+            ft.Row([
+                ft.Button("✅ Отметить вручную", on_click=on_mark_all),
+                ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
+                          style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE)),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             
+            # --- ТАЙМЕР И СПИСОК УХОДЯТ ВНИЗ ---
+            ft.Row([qr_countdown, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: (refresh_qr(), page.run_task(refresh_attendees)))], alignment=ft.MainAxisAlignment.CENTER),
             ft.Divider(height=1),
             
-            # --- НИЖНЯЯ ПРОКРУЧИВАЕМАЯ ЧАСТЬ (Список и кнопки) ---
+            # Прокручиваемый список
             ft.Column([
                 qr_attendees_count, 
                 qr_attendees_list, 
-                ft.Container(height=10), 
-                
-                ft.Column([
-                    ft.Button("✅ Отметить всех вручную", on_click=on_mark_all, width=320),
-                    ft.Button("⏹ Завершить", icon=ft.Icons.STOP, on_click=on_finish_lesson,
-                              style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE), width=320),
-                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
-                
-            ], spacing=10, expand=True, scroll=ft.ScrollMode.AUTO) 
+            ], expand=True, scroll=ft.ScrollMode.AUTO) 
             
         ], spacing=10, expand=True)
         
