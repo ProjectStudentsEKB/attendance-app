@@ -575,11 +575,12 @@ async def main(page: ft.Page):
             
         ], spacing=10, expand=True)
         
+        # ---- СТАТИСТИКА ----
         stats_group_dd = ft.Dropdown(label="Выберите группу", expand=True, options=[])
+        stats_start_date = ft.TextField(label="С даты (ГГГГ-ММ-ДД)", hint_text="2026-10-01", expand=True)
+        stats_end_date = ft.TextField(label="По дату (ГГГГ-ММ-ДД)", hint_text="2026-12-31", expand=True)
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
-
-        
 
         async def refresh_stats_groups():
             stats_group_dd.options.clear()
@@ -600,13 +601,18 @@ async def main(page: ft.Page):
             stats_list.controls.clear()
             stats_summary.value = ""
             if not stats_group_dd.value:
+                stats_summary.value = "Выберите группу"
                 page.update()
                 return
+                
             try:
-                stats, total_lessons = await asyncio.to_thread(db.get_group_stats, stats_group_dd.value)
+                s_date = stats_start_date.value.strip() if stats_start_date.value else None
+                e_date = stats_end_date.value.strip() if stats_end_date.value else None
+                
+                stats, total_lessons = await asyncio.to_thread(db.get_advanced_stats, stats_group_dd.value, s_date, e_date)
                 
                 if total_lessons == 0:
-                    stats_summary.value = "⚠️ У группы ещё нет проведённых занятий"
+                    stats_summary.value = "⚠️ За выбранный период занятий не было"
                     stats_summary.color = ft.Colors.ORANGE
                     page.update()
                     return
@@ -634,8 +640,8 @@ async def main(page: ft.Page):
                                          bgcolor=color, padding=10, border_radius=20),
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         padding=10, bgcolor=bg, border_radius=8))
-            except:
-                stats_summary.value = "Ошибка загрузки статистики"
+            except Exception as ex:
+                stats_summary.value = f"Ошибка: {ex}"
                 stats_summary.color = ft.Colors.RED
             page.update()
 
@@ -643,9 +649,11 @@ async def main(page: ft.Page):
 
         stats_screen = ft.Column([
             ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD),
-            ft.Row([stats_group_dd, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: page.run_task(refresh_stats))], spacing=10),
-            stats_summary,
+            ft.Row([stats_group_dd], spacing=10),
+            ft.Row([stats_start_date, stats_end_date], spacing=10),
+            ft.Button("Показать статистику", icon=ft.Icons.SEARCH, on_click=refresh_stats, expand=True),
             ft.Divider(),
+            stats_summary,
             stats_list,
         ], spacing=15, scroll=ft.ScrollMode.AUTO)
 
