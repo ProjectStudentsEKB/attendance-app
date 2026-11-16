@@ -373,7 +373,7 @@ def get_admin_stats(group_id=None, program=None, student_name=None, start_date=N
     """Расширенная статистика для администратора"""
     try:
         # 1. Базовый запрос занятий
-        query = supabase.table("lessons").select("id, groups(program)")
+        query = supabase.table("lessons").select("id, group_id, groups(program)")
         if start_date: query = query.gte("created_at", start_date)
         if end_date: query = query.lte("created_at", f"{end_date}T23:59:59")
         
@@ -410,5 +410,11 @@ def get_admin_stats(group_id=None, program=None, student_name=None, start_date=N
 
 def get_all_programs():
     """Получает список уникальных образовательных программ"""
-    res = supabase.table("groups").select("program").not_.is_("program", "null").execute()
-    return sorted(list(set([r["program"] for r in res.data if r["program"]])))
+    try:
+        res = supabase.table("groups").select("program").execute()
+        # Берем только те, где программа не пустая, и убираем дубликаты
+        programs = list(set([r["program"] for r in res.data if r.get("program") and r["program"].strip() != ""]))
+        return sorted(programs)
+    except Exception as e:
+        print(f"Ошибка загрузки программ: {e}")
+        return []
