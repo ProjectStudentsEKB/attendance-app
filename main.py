@@ -498,7 +498,7 @@ async def main(page: ft.Page):
 
             geo = fg.Geolocator()
             try:
-                pos = await geo.get_current_position_async()
+                pos = await asyncio.wait_for(geo.get_current_position_async(), timeout=5.0)
                 lat = pos.latitude if pos else None
                 lon = pos.longitude if pos else None
             except Exception:
@@ -652,10 +652,7 @@ async def main(page: ft.Page):
         start_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_start_date))
         end_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_end_date))
         
-        if start_date_picker not in page.overlay:
-            page.overlay.append(start_date_picker)
-        if end_date_picker not in page.overlay:
-            page.overlay.append(end_date_picker)
+        
         
         def export_report(e):
             report = f"📊 ОТЧЕТ ПО ПОСЕЩАЕМОСТИ\nДаты: {stats_start_date.value or 'Все время'} - {stats_end_date.value or 'Все время'}\n\n"
@@ -812,7 +809,7 @@ async def main(page: ft.Page):
             # 2. Получаем координаты
             geo = fg.Geolocator()
             try:
-                pos = await geo.get_current_position_async()
+                pos = await asyncio.wait_for(geo.get_current_position_async(), timeout=5.0)
                 student_lat = pos.latitude if pos else None
                 student_lon = pos.longitude if pos else None
             except Exception:
@@ -1055,10 +1052,7 @@ async def main(page: ft.Page):
         a_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
         a_start_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_start_date))
         a_end_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_end_date))
-        if a_start_picker not in page.overlay:
-            page.overlay.append(a_start_picker)
-        if a_end_picker not in page.overlay:
-            page.overlay.append(a_end_picker)
+        
         
         a_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         a_list = ft.Column(spacing=8)
