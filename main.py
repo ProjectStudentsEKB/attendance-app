@@ -9,9 +9,15 @@ from datetime import datetime
 import math
 import flet_geolocator as fg
 import flet_camera as fc
-from pyzbar.pyzbar import decode
-from PIL import Image
-import io
+
+try:
+    from pyzbar.pyzbar import decode
+    from PIL import Image
+    import io
+    SCANNER_AVAILABLE = True
+except Exception as e:
+    print(f"Ошибка загрузки сканера: {e}")
+    SCANNER_AVAILABLE = False
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -589,10 +595,9 @@ async def main(page: ft.Page):
         # ---- СТАТИСТИКА (Только для преподавателя) ----
         stats_start_date = ft.TextField(label="С даты", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
         stats_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
+        stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        stats_list = ft.Column(spacing=8)
         
-        start_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_start_date))
-        end_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_end_date))
-        page.overlay.extend([start_date_picker, end_date_picker])
         
         def on_date_change(e, textfield):
             if e.control.value:
@@ -604,8 +609,7 @@ async def main(page: ft.Page):
             stats_end_date.value = ""
             page.run_task(refresh_my_stats)
 
-        stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
-        stats_list = ft.Column(spacing=8)
+        
 
         def color_for(p):
             if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
@@ -644,7 +648,15 @@ async def main(page: ft.Page):
                 stats_summary.value = f"Ошибка: {ex}"
                 stats_summary.color = ft.Colors.RED
             page.update()
-
+        
+        start_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_start_date))
+        end_date_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, stats_end_date))
+        
+        if start_date_picker not in page.overlay:
+            page.overlay.append(start_date_picker)
+        if end_date_picker not in page.overlay:
+            page.overlay.append(end_date_picker)
+        
         def export_report(e):
             report = f"📊 ОТЧЕТ ПО ПОСЕЩАЕМОСТИ\nДаты: {stats_start_date.value or 'Все время'} - {stats_end_date.value or 'Все время'}\n\n"
             for c in stats_list.controls:
@@ -777,6 +789,11 @@ async def main(page: ft.Page):
         active_camera = {"ref": None}
 
         async def scan_qr(e):
+            if not SCANNER_AVAILABLE:
+                status_msg.value = "Ошибка: Сканер камеры не поддерживается на этом устройстве."
+                status_msg.color = ft.Colors.RED
+                page.update()
+                return
             status_msg.value = "Запрос доступа к камере и GPS..."
             status_msg.color = ft.Colors.BLUE
             page.update()
@@ -1017,6 +1034,18 @@ async def main(page: ft.Page):
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
         # --- ВКЛАДКА 2: ГЛОБАЛЬНАЯ СТАТИСТИКА ---
+        # Функции для календаря и цветов (они должны быть внутри build_admin_app)
+        def on_date_change(e, textfield):
+            if e.control.value:
+                textfield.value = e.control.value.strftime("%Y-%m-%d")
+                page.update()
+
+        def color_for(p):
+            if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
+            elif p >= 60: return ft.Colors.ORANGE, ft.Colors.ORANGE_50
+            return ft.Colors.RED, ft.Colors.RED_50
+
+        prog_dd = ft.Dropdown(label="Программа", expand=True, options=[ft.DropdownOption(key="", text="Все программы")])
         prog_dd = ft.Dropdown(label="Программа", expand=True, options=[ft.DropdownOption(key="", text="Все программы")])
         for p in db.get_all_programs(): prog_dd.options.append(ft.DropdownOption(key=p, text=p))
         
@@ -1026,7 +1055,10 @@ async def main(page: ft.Page):
         a_end_date = ft.TextField(label="По дату", hint_text="ГГГГ-ММ-ДД", expand=True, read_only=True)
         a_start_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_start_date))
         a_end_picker = ft.DatePicker(first_date=datetime(2024, 1, 1), last_date=datetime(2030, 12, 31), on_change=lambda e: on_date_change(e, a_end_date))
-        page.overlay.extend([a_start_picker, a_end_picker])
+        if a_start_picker not in page.overlay:
+            page.overlay.append(a_start_picker)
+        if a_end_picker not in page.overlay:
+            page.overlay.append(a_end_picker)
         
         a_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         a_list = ft.Column(spacing=8)
