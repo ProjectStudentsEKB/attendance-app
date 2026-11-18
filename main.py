@@ -626,7 +626,7 @@ async def main(page: ft.Page):
                 
                 stats, total_lessons = await asyncio.to_thread(db.get_teacher_stats, user["id"], s_date, e_date)
                 
-                if total_lessons == 0:
+                if total_lessons == 0 or not stats:
                     stats_summary.value = "⚠️ У вас еще нет проведенных занятий"
                     stats_summary.color = ft.Colors.ORANGE
                     page.update()
@@ -1070,7 +1070,7 @@ async def main(page: ft.Page):
                 # Для админа используем функцию get_advanced_stats, но без привязки к группе
                 stats, total = await asyncio.to_thread(db.get_admin_stats, None, prog, stud, s_date, e_date)
                 
-                if total == 0:
+                if total == 0 or not stats:
                     a_summary.value = "Нет данных за выбранный период."
                     page.update()
                     return
