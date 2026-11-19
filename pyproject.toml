@@ -14,12 +14,7 @@ dependencies = [
 ]
 
 [tool.flet.android]
-extract_packages = [
-    "pyzbar",
-    "flet_camera",
-    "flet_geolocator",
-    "flet_permission_handler"
-]
+extract_packages = ["pyzbar"]
 
 [tool.flet.android.permission]
 "android.permission.CAMERA" = true
