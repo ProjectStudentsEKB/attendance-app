@@ -18,6 +18,5 @@ extract_packages = ["pyzbar"]
 
 [tool.flet.android.permission]
 "android.permission.CAMERA" = true
-"android.permission.RECORD_AUDIO" = true
 "android.permission.ACCESS_FINE_LOCATION" = true
 "android.permission.ACCESS_COARSE_LOCATION" = true
