@@ -1,4 +1,4 @@
-import flet_permission_handler as fph
+#import flet_permission_handler as fph
 import flet as ft
 import supabase_db as db
 import qr_utils
@@ -8,10 +8,10 @@ import time as _time
 from datetime import datetime
 import math
 import flet_geolocator as fg
-import flet_camera as fc
-from pyzbar.pyzbar import decode
-from PIL import Image
-import io
+#import flet_camera as fc
+#from pyzbar.pyzbar import decode
+#from PIL import Image
+#import io
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -752,9 +752,10 @@ async def main(page: ft.Page):
         active_camera = {"ref": None}
 
         async def scan_qr(e):
-            status_msg.value = "Запрос доступа к камере и GPS..."
+            status_msg.value = "Сканер временно отключен для стабилизации приложения."
             status_msg.color = ft.Colors.BLUE
             page.update()
+            return
 
             # 1. Запрашиваем разрешение на камеру
             ph = fph.PermissionHandler()
