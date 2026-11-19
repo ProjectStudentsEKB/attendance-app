@@ -29,8 +29,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build APK
-        run: flet build apk --yes --skip-flutter-doctor --android-extract-packages pyzbar flet_camera flet_geolocator flet_permission_handler
-
+        run: flet build apk --yes --skip-flutter-doctor --android-extract-packages pyzbar
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
