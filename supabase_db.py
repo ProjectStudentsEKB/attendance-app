@@ -297,3 +297,38 @@ def get_lesson_details(lesson_id):
         return None
     except Exception:
         return None
+
+from datetime import datetime, timedelta
+
+def get_teacher_custom_stats(teacher_id, group_id=None, student_id=None, days=30):
+    try:
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        # 1. Ищем занятия преподавателя за период
+        query = supabase.table("lessons").select("id").eq("teacher_id", teacher_id).gte("created_at", start_date)
+        if group_id:
+            query = query.eq("group_id", group_id)
+        lessons = query.execute()
+        lesson_ids = [l["id"] for l in lessons.data]
+        
+        if not lesson_ids:
+            return [], 0
+
+        # 2. Собираем посещаемость
+        att_query = supabase.table("attendance").select("student_id, users(full_name)").in_("lesson_id", lesson_ids)
+        if student_id:
+            att_query = att_query.eq("student_id", student_id)
+        attendance = att_query.execute()
+        
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"name": k, "present": v, "total": len(lesson_ids), "percent": round(v/len(lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(lesson_ids)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return [], 0
