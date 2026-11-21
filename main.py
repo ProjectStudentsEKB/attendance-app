@@ -551,10 +551,11 @@ async def main(page: ft.Page):
             for c in stats_list.controls:
                 report += f"{c.content.controls[0].value} | {c.content.controls[1].value}\n"
             
-            # Показываем красивое окно с текстом отчета, который можно выделить и скопировать
             page.show_dialog(ft.AlertDialog(
                 title=ft.Text("Ваш отчет"),
-                content=ft.TextField(value=report, multiline=True, read_only=True, min_lines=10, max_lines=20),
+                content=ft.Column([
+                    ft.Text(report, selectable=True, size=14) # Используем Text вместо TextField
+                ], scroll=ft.ScrollMode.AUTO, height=300, width=350),
                 actions=[
                     ft.TextButton("Закрыть", on_click=lambda e: page.pop_dialog())
                 ]
@@ -825,20 +826,13 @@ async def main(page: ft.Page):
             
             for c in a_list.controls:
                 text_elements = c.content.controls
-                # Берем ФИО и результат из строк списка
                 report += f"{text_elements[0].value} | {text_elements[1].value}\n"
             
-            # Открываем окно с текстом, который можно выделить и скопировать
             page.show_dialog(ft.AlertDialog(
                 title=ft.Text("Отчет для руководства"),
-                content=ft.TextField(
-                    value=report, 
-                    multiline=True, 
-                    read_only=True, 
-                    min_lines=12, 
-                    max_lines=25,
-                    text_size=14
-                ),
+                content=ft.Column([
+                    ft.Text(report, selectable=True, size=14) # Используем Text вместо TextField
+                ], scroll=ft.ScrollMode.AUTO, height=300, width=350),
                 actions=[
                     ft.TextButton("Закрыть", on_click=lambda e: page.pop_dialog())
                 ]
