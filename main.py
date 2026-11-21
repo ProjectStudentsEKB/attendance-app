@@ -481,7 +481,7 @@ async def main(page: ft.Page):
             ], expand=True, scroll=ft.ScrollMode.AUTO)
         ], expand=True)
 
-        # ---- СТАТИСТИКА (По периодам) ----
+        # ---- СТАТИСТИКА ----
         stats_group_dd = ft.Dropdown(label="Группа", expand=True)
         stats_student_dd = ft.Dropdown(label="Студент (необязательно)", expand=True, options=[ft.dropdown.Option(key="", text="Все студенты")])
         stats_period_dd = ft.Dropdown(label="Период", expand=True, value="30", options=[
@@ -563,13 +563,6 @@ async def main(page: ft.Page):
                 ft.Button("Сброс", on_click=clear_stats, expand=True),
                 ft.Button("Копировать", on_click=export_report, expand=True),
             ]),
-            ft.Divider(), stats_summary, stats_list
-        ], scroll=ft.ScrollMode.AUTO)
-
-        stats_screen = ft.Column([
-            ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
-            ft.Row([stats_start_date, stats_end_date], spacing=10),
-            ft.Row([ft.Button("Показать", on_click=refresh_my_stats, expand=True), ft.Button("Сброс", on_click=lambda e: (setattr(stats_start_date, 'value', ''), setattr(stats_end_date, 'value', ''), refresh_my_stats()), expand=True), ft.Button("Копировать", on_click=export_report, expand=True)]),
             ft.Divider(), stats_summary, stats_list
         ], scroll=ft.ScrollMode.AUTO)
 
