@@ -591,8 +591,8 @@ async def main(page: ft.Page):
         top_bar = ft.Container(content=ft.Row([ft.Text(f"👤 {user['email']}"), ft.TextButton("Выйти", on_click=logout)], alignment=ft.MainAxisAlignment.END), bgcolor=ft.Colors.GREY_100)
         return ft.Column([
             top_bar, 
-            ft.Row([nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
-        ], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
+            ft.Row([nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0)
+        ], expand=True, spacing=0)
 
     # ==========================================================
     # ПРИЛОЖЕНИЕ СТУДЕНТА (СКАНЕР РАБОТАЕТ)
@@ -833,8 +833,11 @@ async def main(page: ft.Page):
         top_bar = ft.Container(content=ft.Row([ft.Text(f"👤 Админ"), ft.TextButton("Выйти", on_click=logout)]), bgcolor=ft.Colors.GREY_100)
         page.run_task(refresh_students)
         
-        return ft.Column([top_bar, ft.Row([admin_nav, ft.VerticalDivider(width=1), content_area], expand=True)], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
-
+        return ft.Column([
+            top_bar, 
+            ft.Row([admin_nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0) # Убрали scroll
+        ], expand=True, spacing=0) # Убрали scroll
+        
     def render():
         if state["user"] is None:
             root.content = build_login() if state["view"] == "login" else build_register()
