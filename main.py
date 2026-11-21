@@ -550,8 +550,15 @@ async def main(page: ft.Page):
             report = f"📊 ОТЧЕТ (Период: {stats_period_dd.value} дней)\n\n"
             for c in stats_list.controls:
                 report += f"{c.content.controls[0].value} | {c.content.controls[1].value}\n"
-            page.set_clipboard(report)
-            page.show_dialog(ft.SnackBar(ft.Text("Отчет скопирован в буфер обмена (вставьте в WhatsApp)!")))
+            
+            # Показываем красивое окно с текстом отчета, который можно выделить и скопировать
+            page.show_dialog(ft.AlertDialog(
+                title=ft.Text("Ваш отчет"),
+                content=ft.TextField(value=report, multiline=True, read_only=True, min_lines=10, max_lines=20),
+                actions=[
+                    ft.TextButton("Закрыть", on_click=lambda e: page.pop_dialog())
+                ]
+            ))
 
         stats_screen = ft.Column([
             ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
@@ -812,11 +819,30 @@ async def main(page: ft.Page):
             page.update()
 
         def export_admin_report(e):
-            report = "🏛️ ОТЧЕТ\n"
+            report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ\n"
+            report += f"Программа: {prog_dd.value or 'Все'}\n"
+            report += f"Период: {a_start_date.value or 'Все'} - {a_end_date.value or 'Все'}\n\n"
+            
             for c in a_list.controls:
-                report += f"{c.content.controls[0].value} | {c.content.controls[1].value}\n"
-            page.set_clipboard(report)
-            page.show_dialog(ft.SnackBar(ft.Text("Отчет скопирован!")))
+                text_elements = c.content.controls
+                # Берем ФИО и результат из строк списка
+                report += f"{text_elements[0].value} | {text_elements[1].value}\n"
+            
+            # Открываем окно с текстом, который можно выделить и скопировать
+            page.show_dialog(ft.AlertDialog(
+                title=ft.Text("Отчет для руководства"),
+                content=ft.TextField(
+                    value=report, 
+                    multiline=True, 
+                    read_only=True, 
+                    min_lines=12, 
+                    max_lines=25,
+                    text_size=14
+                ),
+                actions=[
+                    ft.TextButton("Закрыть", on_click=lambda e: page.pop_dialog())
+                ]
+            ))
 
         screen_stats = ft.Column([
             ft.Row([prog_dd]), ft.Row([student_search]), ft.Row([a_start_date, a_end_date], spacing=5),
