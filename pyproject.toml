@@ -13,6 +13,11 @@ dependencies = [
     "pillow",
 ]
 
+# --- ДОБАВИТЬ ВОТ ЭТИ ДВЕ СТРОКИ ---
+[tool.flet.android]
+extract_packages = ["pyzbar"]
+# -----------------------------------
+
 [tool.flet.android.permission]
 "android.permission.CAMERA" = true
 "android.permission.ACCESS_FINE_LOCATION" = true
