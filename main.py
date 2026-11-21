@@ -313,10 +313,13 @@ async def main(page: ft.Page):
 
         async def refresh_groups():
             groups_list.controls.clear()
+            groups_list.controls.append(ft.Text("Подождите, идет загрузка групп...", color=ft.Colors.BLUE))
+            page.update()
             try:
                 groups = await asyncio.to_thread(db.get_groups)
+                groups_list.controls.clear()
                 if not groups:
-                    groups_list.controls.append(ft.Text("Нет групп.", color=ft.Colors.GREY))
+                    groups_list.controls.append(ft.Text("Нет групп. Добавь первую!", color=ft.Colors.GREY))
                 else:
                     for g in groups:
                         students = await asyncio.to_thread(db.get_students, g["id"])
@@ -324,7 +327,8 @@ async def main(page: ft.Page):
                             content=ft.Row([ft.Icon(ft.Icons.PEOPLE), ft.Text(g["name"], size=18, weight=ft.FontWeight.BOLD), ft.Text(f"{len(students)} студ.", color=ft.Colors.GREY), ft.Icon(ft.Icons.CHEVRON_RIGHT)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                             padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8, on_click=lambda e, gid=g["id"], n=g["name"]: open_group(gid, n), ink=True))
             except:
-                groups_list.controls.append(ft.Text("Ошибка групп", color=ft.Colors.RED))
+                groups_list.controls.clear()
+                groups_list.controls.append(ft.Text("Ошибка загрузки. Проверьте сеть.", color=ft.Colors.RED))
             page.update()
 
         async def on_add_group(e):
@@ -477,11 +481,34 @@ async def main(page: ft.Page):
             ], expand=True, scroll=ft.ScrollMode.AUTO)
         ], expand=True)
 
-        # ---- СТАТИСТИКА (ТЕКСТОВЫЕ ДАТЫ, БЕЗ КАЛЕНДАРЕЙ) ----
-        stats_start_date = ft.TextField(label="С даты (ГГГГ-ММ-ДД)", hint_text="2026-10-01", expand=True)
-        stats_end_date = ft.TextField(label="По дату (ГГГГ-ММ-ДД)", hint_text="2026-12-31", expand=True)
+        # ---- СТАТИСТИКА (По периодам) ----
+        stats_group_dd = ft.Dropdown(label="Группа", expand=True)
+        stats_student_dd = ft.Dropdown(label="Студент (необязательно)", expand=True, options=[ft.dropdown.Option(key="", text="Все студенты")])
+        stats_period_dd = ft.Dropdown(label="Период", expand=True, value="30", options=[
+            ft.dropdown.Option(key="7", text="Последняя неделя"),
+            ft.dropdown.Option(key="30", text="Последний месяц"),
+            ft.dropdown.Option(key="60", text="Последние 2 месяца"),
+            ft.dropdown.Option(key="90", text="Последние 3 месяца"),
+            ft.dropdown.Option(key="120", text="Последние 4 месяца"),
+        ])
         stats_summary = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
         stats_list = ft.Column(spacing=8)
+
+        async def refresh_stats_groups():
+            stats_group_dd.options.clear()
+            groups = await asyncio.to_thread(db.get_groups)
+            for g in groups: stats_group_dd.options.append(ft.dropdown.Option(key=g["id"], text=g["name"]))
+            page.update()
+
+        async def on_stats_group_change(e):
+            stats_student_dd.options.clear()
+            stats_student_dd.options.append(ft.dropdown.Option(key="", text="Все студенты"))
+            stats_student_dd.value = ""
+            if stats_group_dd.value:
+                students = await asyncio.to_thread(db.get_students, stats_group_dd.value)
+                for s in students: stats_student_dd.options.append(ft.dropdown.Option(key=s["id"], text=s["full_name"]))
+            page.update()
+        stats_group_dd.on_select = lambda e: page.run_task(on_stats_group_change, e)
 
         def color_for(p):
             if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
@@ -493,27 +520,51 @@ async def main(page: ft.Page):
             stats_summary.value = "Загрузка..."
             page.update()
             try:
-                s_date = stats_start_date.value if stats_start_date.value else None
-                e_date = stats_end_date.value if stats_end_date.value else None
-                stats, total_lessons = await asyncio.to_thread(db.get_teacher_stats, user["id"], s_date, e_date)
-                if total_lessons == 0:
-                    stats_summary.value = "⚠️ Нет занятий за этот период"
+                gid = stats_group_dd.value if stats_group_dd.value else None
+                sid = stats_student_dd.value if stats_student_dd.value else None
+                days = int(stats_period_dd.value)
+                
+                stats, total = await asyncio.to_thread(db.get_teacher_custom_stats, user["id"], gid, sid, days)
+                if total == 0:
+                    stats_summary.value = "⚠️ Нет занятий за выбранный период."
                     page.update()
                     return
-                stats_summary.value = f"📊 Занятий: {total_lessons}"
+                stats_summary.value = f"📊 Занятий: {total}"
                 for s in stats:
                     color, bg = color_for(s["percent"])
-                    stats_list.controls.append(ft.Container(content=ft.Row([ft.Text(s["name"], expand=True), ft.Text(f"{s['percent']}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), padding=10, bgcolor=color, border_radius=8))
+                    stats_list.controls.append(ft.Container(
+                        content=ft.Row([ft.Text(s["name"], expand=True), ft.Text(f"{s['percent']}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)]),
+                        padding=10, bgcolor=color, border_radius=8))
             except Exception as ex:
                 stats_summary.value = f"Ошибка: {ex}"
             page.update()
 
+        def clear_stats(e):
+            stats_group_dd.value = None
+            stats_student_dd.value = None
+            stats_list.controls.clear()
+            stats_summary.value = ""
+            page.update()
+
         def export_report(e):
-            report = f"📊 ОТЧЕТ\n"
+            report = f"📊 ОТЧЕТ (Период: {stats_period_dd.value} дней)\n\n"
             for c in stats_list.controls:
                 report += f"{c.content.controls[0].value} | {c.content.controls[1].value}\n"
             page.set_clipboard(report)
-            page.show_dialog(ft.SnackBar(ft.Text("Скопировано!")))
+            page.show_dialog(ft.SnackBar(ft.Text("Отчет скопирован в буфер обмена (вставьте в WhatsApp)!")))
+
+        stats_screen = ft.Column([
+            ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
+            ft.Row([stats_group_dd]),
+            ft.Row([stats_student_dd]),
+            ft.Row([stats_period_dd]),
+            ft.Row([
+                ft.Button("Показать", on_click=refresh_my_stats, expand=True),
+                ft.Button("Сброс", on_click=clear_stats, expand=True),
+                ft.Button("Копировать", on_click=export_report, expand=True),
+            ]),
+            ft.Divider(), stats_summary, stats_list
+        ], scroll=ft.ScrollMode.AUTO)
 
         stats_screen = ft.Column([
             ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
@@ -545,7 +596,10 @@ async def main(page: ft.Page):
         page.run_task(refresh_groups)
 
         top_bar = ft.Container(content=ft.Row([ft.Text(f"👤 {user['email']}"), ft.TextButton("Выйти", on_click=logout)], alignment=ft.MainAxisAlignment.END), bgcolor=ft.Colors.GREY_100)
-        return ft.Column([top_bar, ft.Row([nav, ft.VerticalDivider(width=1), content_area], expand=True)], expand=True, spacing=0)
+        return ft.Column([
+            top_bar, 
+            ft.Row([nav, ft.VerticalDivider(width=1), content_area], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
+        ], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
 
     # ==========================================================
     # ПРИЛОЖЕНИЕ СТУДЕНТА (СКАНЕР РАБОТАЕТ)
@@ -786,7 +840,7 @@ async def main(page: ft.Page):
         top_bar = ft.Container(content=ft.Row([ft.Text(f"👤 Админ"), ft.TextButton("Выйти", on_click=logout)]), bgcolor=ft.Colors.GREY_100)
         page.run_task(refresh_students)
         
-        return ft.Column([top_bar, ft.Row([admin_nav, ft.VerticalDivider(width=1), content_area], expand=True)], expand=True, spacing=0)
+        return ft.Column([top_bar, ft.Row([admin_nav, ft.VerticalDivider(width=1), content_area], expand=True)], expand=True, spacing=0, scroll=ft.ScrollMode.AUTO)
 
     def render():
         if state["user"] is None:
