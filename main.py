@@ -326,9 +326,9 @@ async def main(page: ft.Page):
                         groups_list.controls.append(ft.Container(
                             content=ft.Row([ft.Icon(ft.Icons.PEOPLE), ft.Text(g["name"], size=18, weight=ft.FontWeight.BOLD), ft.Text(f"{len(students)} студ.", color=ft.Colors.GREY), ft.Icon(ft.Icons.CHEVRON_RIGHT)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                             padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8, on_click=lambda e, gid=g["id"], n=g["name"]: open_group(gid, n), ink=True))
-            except:
+            except Exception as e:
                 groups_list.controls.clear()
-                groups_list.controls.append(ft.Text("Ошибка загрузки. Проверьте сеть.", color=ft.Colors.RED))
+                groups_list.controls.append(ft.Text(f"Ошибка базы данных: {e}", color=ft.Colors.RED))
             page.update()
 
         async def on_add_group(e):
@@ -341,7 +341,7 @@ async def main(page: ft.Page):
             except: pass
             page.update()
 
-        groups_screen = ft.Column([ft.Text("👥 Группы", size=28, weight=ft.FontWeight.BOLD), ft.Row([group_name_field, ft.Button("Добавить", icon=ft.Icons.ADD, on_click=on_add_group)]), ft.Divider(), groups_list], scroll=ft.ScrollMode.AUTO)
+        groups_screen = ft.Column([ft.Text("👥 Группы", size=28, weight=ft.FontWeight.BOLD), ft.Row([group_name_field, ft.Button("Добавить", icon=ft.Icons.ADD, on_click=on_add_group)]), ft.Divider(), groups_list], scroll=ft.ScrollMode.AUTO, expand=True)
 
         students_title = ft.Text("", size=28, weight=ft.FontWeight.BOLD)
         students_list = ft.Column(spacing=10)
@@ -357,7 +357,7 @@ async def main(page: ft.Page):
             except: pass
             page.update()
 
-        students_screen = ft.Column([ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: page.run_task(switch_screen, 1)), students_title]), ft.Divider(), students_list], scroll=ft.ScrollMode.AUTO)
+        students_screen = ft.Column([ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: page.run_task(switch_screen, 1)), students_title]), ft.Divider(), students_list], scroll=ft.ScrollMode.AUTO, expand=True)
 
         lesson_group_dd = ft.Dropdown(label="Группа", expand=True, options=[])
         lesson_status = ft.Text("", weight=ft.FontWeight.BOLD)
@@ -464,7 +464,7 @@ async def main(page: ft.Page):
             ft.Text("📅 Занятие", size=28, weight=ft.FontWeight.BOLD), ft.Divider(), ft.Row([lesson_group_dd]),
             ft.Button("▶  Начать занятие", icon=ft.Icons.PLAY_ARROW, on_click=on_start_lesson, style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE), expand=True),
             lesson_status,
-        ], scroll=ft.ScrollMode.AUTO)
+        ], scroll=ft.ScrollMode.AUTO, expand=True)
 
         qr_screen = ft.Column([
             ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda e: (stop_qr_auto_refresh(), page.run_task(switch_screen, 3))), ft.Text("📱 QR-код", size=22, weight=ft.FontWeight.BOLD)]),
@@ -564,18 +564,24 @@ async def main(page: ft.Page):
                 ft.Button("Копировать", on_click=export_report, expand=True),
             ]),
             ft.Divider(), stats_summary, stats_list
-        ], scroll=ft.ScrollMode.AUTO)
+        ], scroll=ft.ScrollMode.AUTO, expand=True)
 
         screens = [home_screen, groups_screen, students_screen, lesson_screen, stats_screen, qr_screen]
         content_area = ft.Container(content=screens[0], padding=20, expand=True)
 
         async def switch_screen(index):
             content_area.content = screens[index]
-            if index == 5: page.update(); return
+            if index == 5:
+                page.update(); return
             if index == 0: nav.selected_index = 0
             elif index in (1, 2): nav.selected_index = 1
-            elif index == 3: nav.selected_index = 2; await refresh_lesson_groups()
-            elif index == 4: nav.selected_index = 3; await refresh_my_stats()
+            elif index == 3: 
+                nav.selected_index = 2
+                await refresh_lesson_groups()
+            elif index == 4: 
+                nav.selected_index = 3
+                await refresh_stats_groups() # <--- ДОБАВЛЕНО: загрузка групп для статистики
+                await refresh_my_stats()
             if index == 1: await refresh_groups()
             if index == 2: await refresh_students()
             page.update()
