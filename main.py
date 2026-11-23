@@ -12,6 +12,7 @@ import flet_camera as fc
 from pyzbar.pyzbar import decode
 from PIL import Image
 import io
+import os
 
 async def main(page: ft.Page):
     page.title = "Учёт посещаемости"
@@ -580,6 +581,25 @@ async def main(page: ft.Page):
                 ]
             ))
 
+        # ---- НАСТРОЙКА СКАЧИВАНИЯ ФАЙЛА ----
+        save_dialog = ft.FilePicker()
+        page.services.append(save_dialog)
+
+        async def save_report_file(e):
+            # 1. Формируем текст отчета
+            report = f"📊 ОТЧЕТ (Период: {stats_period_dd.value} дней)\n\n"
+            for c in stats_list.controls:
+                report += f"{c.content.controls[0].value} | {c.content.controls[1].value}\n"
+            
+            # 2. Конвертируем текст в байты (кодировка UTF-8)
+            file_bytes = report.encode("utf-8")
+            
+            # 3. Открываем системное окно сохранения файла
+            await save_dialog.save_file(
+                file_name="Attendance_Report.txt",
+                src_bytes=file_bytes
+            )
+
         stats_screen = ft.Column([
             ft.Text("📊 Моя статистика", size=28, weight=ft.FontWeight.BOLD),
             ft.Row([stats_group_dd]),
@@ -588,7 +608,7 @@ async def main(page: ft.Page):
             ft.Row([
                 ft.Button("Показать", on_click=refresh_my_stats, expand=True),
                 ft.Button("Сброс", on_click=clear_stats, expand=True),
-                ft.Button("Копировать", on_click=export_report, expand=True),
+                ft.Button("Скачать", on_click=export_report, expand=True),
             ]),
             ft.Divider(), stats_summary, stats_list
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -838,7 +858,12 @@ async def main(page: ft.Page):
                 a_summary.value = f"Ошибка: {ex}"
             page.update()
 
-        def export_admin_report(e):
+
+        # ---- НАСТРОЙКА СКАЧИВАНИЯ ФАЙЛА ----
+        save_dialog_admin = ft.FilePicker()
+        page.services.append(save_dialog_admin)
+
+        async def save_admin_report_file(e):
             report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ\n"
             report += f"Программа: {prog_dd.value or 'Все'}\n"
             report += f"Период: {a_start_date.value or 'Все'} - {a_end_date.value or 'Все'}\n\n"
@@ -847,19 +872,15 @@ async def main(page: ft.Page):
                 text_elements = c.content.controls
                 report += f"{text_elements[0].value} | {text_elements[1].value}\n"
             
-            page.show_dialog(ft.AlertDialog(
-                title=ft.Text("Отчет для руководства"),
-                content=ft.Column([
-                    ft.Text(report, selectable=True, size=14) # Используем Text вместо TextField
-                ], scroll=ft.ScrollMode.AUTO, height=300, width=350),
-                actions=[
-                    ft.TextButton("Закрыть", on_click=lambda e: page.pop_dialog())
-                ]
-            ))
+            file_bytes = report.encode("utf-8")
+            await save_dialog_admin.save_file(
+                file_name="Admin_Report.txt",
+                src_bytes=file_bytes
+            )
 
         screen_stats = ft.Column([
             ft.Row([prog_dd]), ft.Row([student_search]), ft.Row([a_start_date, a_end_date], spacing=5),
-            ft.Row([ft.Button("Найти", on_click=refresh_admin_stats, expand=True), ft.Button("Копировать", on_click=export_admin_report, expand=True)]),
+            ft.Row([ft.Button("Найти", on_click=refresh_admin_stats, expand=True), ft.Button("Скачать", on_click=save_admin_report_file, expand=True)]),
             ft.Divider(), a_summary, a_list
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
