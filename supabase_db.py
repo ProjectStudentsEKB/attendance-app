@@ -332,3 +332,12 @@ def get_teacher_custom_stats(teacher_id, group_id=None, student_id=None, days=30
     except Exception as e:
         print(f"Ошибка: {e}")
         return [], 0
+
+def get_all_students_group_ids():
+    """Загружает групповые ID всех студентов одним запросом, чтобы не перегружать базу"""
+    try:
+        res = supabase.table("users").select("group_id").eq("role", "student").execute()
+        return res.data
+    except Exception as e:
+        print(f"Ошибка получения студентов: {e}")
+        return []
