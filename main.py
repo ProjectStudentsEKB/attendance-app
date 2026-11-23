@@ -313,22 +313,41 @@ async def main(page: ft.Page):
 
         async def refresh_groups():
             groups_list.controls.clear()
-            groups_list.controls.append(ft.Text("Подождите, идет загрузка групп...", color=ft.Colors.BLUE))
+            groups_list.controls.append(ft.Text("Подождите, идет загрузка...", color=ft.Colors.BLUE))
             page.update()
             try:
+                # 1. Загружаем группы
                 groups = await asyncio.to_thread(db.get_groups)
+                # 2. Загружаем всех студентов ОДНИМ запросом
+                all_students = await asyncio.to_thread(db.get_all_students_group_ids)
+                
+                # 3. Считаем, сколько студентов в каждой группе (без запросов к БД)
+                counts = {}
+                for s in all_students:
+                    gid = s.get("group_id")
+                    if gid:
+                        counts[gid] = counts.get(gid, 0) + 1
+                
                 groups_list.controls.clear()
                 if not groups:
                     groups_list.controls.append(ft.Text("Нет групп. Добавь первую!", color=ft.Colors.GREY))
                 else:
                     for g in groups:
-                        students = await asyncio.to_thread(db.get_students, g["id"])
+                        student_count = counts.get(g["id"], 0)
                         groups_list.controls.append(ft.Container(
-                            content=ft.Row([ft.Icon(ft.Icons.PEOPLE), ft.Text(g["name"], size=18, weight=ft.FontWeight.BOLD), ft.Text(f"{len(students)} студ.", color=ft.Colors.GREY), ft.Icon(ft.Icons.CHEVRON_RIGHT)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8, on_click=lambda e, gid=g["id"], n=g["name"]: open_group(gid, n), ink=True))
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.PEOPLE),
+                                ft.Text(g["name"], size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"{student_count} студ.", color=ft.Colors.GREY),
+                                ft.Icon(ft.Icons.CHEVRON_RIGHT)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            padding=15, bgcolor=ft.Colors.BLUE_50, border_radius=8, 
+                            on_click=lambda e, gid=g["id"], n=g["name"]: open_group(gid, n), 
+                            ink=True
+                        ))
             except Exception as e:
                 groups_list.controls.clear()
-                groups_list.controls.append(ft.Text(f"Ошибка базы данных: {e}", color=ft.Colors.RED))
+                groups_list.controls.append(ft.Text(f"Ошибка: {e}", color=ft.Colors.RED))
             page.update()
 
         async def on_add_group(e):
