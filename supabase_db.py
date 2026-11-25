@@ -341,3 +341,81 @@ def get_all_students_group_ids():
     except Exception as e:
         print(f"Ошибка получения студентов: {e}")
         return []
+
+def get_all_programs():
+    """Получает список уникальных образовательных программ"""
+    try:
+        res = supabase.table("groups").select("program").execute()
+        # Берем только те, где программа не пустая, и убираем дубликаты
+        programs = list(set([r["program"] for r in res.data if r.get("program") and r["program"].strip() != ""]))
+        return sorted(programs)
+    except Exception as e:
+        print(f"Ошибка загрузки программ: {e}")
+        return []
+
+def get_admin_stats(group_id=None, program=None, student_name=None, start_date=None, end_date=None):
+    """Статистика для администратора"""
+    try:
+        query = supabase.table("lessons").select("id, group_id, groups(program)")
+        if start_date: query = query.gte("created_at", start_date)
+        if end_date: query = query.lte("created_at", f"{end_date}T23:59:59")
+        
+        lessons = query.execute()
+        
+        valid_lesson_ids = []
+        for l in lessons.data:
+            if group_id and l["group_id"] != group_id: continue
+            if program and l.get("groups") and l["groups"]["program"] != program: continue
+            valid_lesson_ids.append(l["id"])
+            
+        if not valid_lesson_ids: return [], 0
+        
+        att_query = supabase.table("attendance").select("student_id, users(full_name)").in_("lesson_id", valid_lesson_ids)
+        attendance = att_query.execute()
+        
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            
+            if student_name and student_name.lower() not in name.lower(): continue
+            
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"full_name": k, "present": v, "total": len(valid_lesson_ids), "percent": round(v/len(valid_lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(valid_lesson_ids)
+    except Exception as e:
+        print(f"Ошибка статистики админа: {e}")
+        return [], 0
+
+# На всякий случай дублируем функцию для преподавателя, если ее вдруг нет
+def get_teacher_custom_stats(teacher_id, group_id=None, student_id=None, days=30):
+    from datetime import datetime, timedelta
+    try:
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        query = supabase.table("lessons").select("id").eq("teacher_id", teacher_id).gte("created_at", start_date)
+        if group_id:
+            query = query.eq("group_id", group_id)
+        lessons = query.execute()
+        lesson_ids = [l["id"] for l in lessons.data]
+        
+        if not lesson_ids: return [], 0
+
+        att_query = supabase.table("attendance").select("student_id, users(full_name)").in_("lesson_id", lesson_ids)
+        if student_id:
+            att_query = att_query.eq("student_id", student_id)
+        attendance = att_query.execute()
+        
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"name": k, "present": v, "total": len(lesson_ids), "percent": round(v/len(lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(lesson_ids)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return [], 0
