@@ -827,17 +827,28 @@ async def main(page: ft.Page):
         search_field.on_change = lambda e: page.run_task(refresh_students)
         screen_students = ft.Column([ft.Row([search_field, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: page.run_task(refresh_students))]), students_list], scroll=ft.ScrollMode.AUTO, expand=True)
 
+        # --- ВКЛАДКА 2: ГЛОБАЛЬНАЯ СТАТИСТИКА ---
         prog_dd = ft.Dropdown(label="Программа", expand=True, options=[ft.DropdownOption(key="", text="Все программы")])
         for p in db.get_all_programs(): prog_dd.options.append(ft.DropdownOption(key=p, text=p))
+        
         student_search = ft.TextField(label="Студент (ФИО)", expand=True)
-        a_start_date = ft.TextField(label="С даты", hint_text="2026-10-01", expand=True)
-        a_end_date = ft.TextField(label="По дату", hint_text="2026-12-31", expand=True)
+        
+        # Вместо дат делаем периоды
+        admin_period_dd = ft.Dropdown(label="Период", expand=True, value="30", options=[
+            ft.dropdown.Option(key="7", text="Последняя неделя"),
+            ft.dropdown.Option(key="30", text="Последний месяц"),
+            ft.dropdown.Option(key="60", text="Последние 2 месяца"),
+            ft.dropdown.Option(key="90", text="Последние 3 месяца"),
+            ft.dropdown.Option(key="120", text="Последние 4 месяца"),
+        ])
+        
         a_summary = ft.Text("", weight=ft.FontWeight.BOLD)
         a_list = ft.Column(spacing=8)
 
-        def color_for(p):
-            if p >= 80: return ft.Colors.GREEN
-            return ft.Colors.RED
+        def color_for_admin(p):
+            if p >= 80: return ft.Colors.GREEN, ft.Colors.GREEN_50
+            elif p >= 60: return ft.Colors.ORANGE, ft.Colors.ORANGE_50
+            return ft.Colors.RED, ft.Colors.RED_50
 
         async def refresh_admin_stats(e=None):
             a_list.controls.clear()
@@ -846,46 +857,55 @@ async def main(page: ft.Page):
             try:
                 prog = prog_dd.value if prog_dd.value else None
                 stud = student_search.value.strip() if student_search.value else None
-                s_date = a_start_date.value if a_start_date.value else None
-                e_date = a_end_date.value if a_end_date.value else None
-                stats, total = await asyncio.to_thread(db.get_admin_stats, None, prog, stud, s_date, e_date)
+                days = int(admin_period_dd.value)
+                
+                stats, total = await asyncio.to_thread(db.get_admin_custom_stats, prog, stud, days)
+                
                 if total == 0:
-                    a_summary.value = "Нет данных."
+                    a_summary.value = "Нет данных за выбранный период."
                     page.update()
                     return
-                a_summary.value = f"📊 Занятий: {total}"
+                    
+                a_summary.value = f"📊 Всего занятий: {total} | Студентов: {len(stats)}"
+                
                 for s in stats:
-                    a_list.controls.append(ft.Container(content=ft.Row([ft.Text(s["full_name"], expand=True), ft.Text(f"{s['percent']}%", color=color_for(s["percent"]))]), padding=10, bgcolor=ft.Colors.GREY_100))
+                    color, bg = color_for_admin(s["percent"])
+                    a_list.controls.append(ft.Container(
+                        content=ft.Row([
+                            ft.Text(s["full_name"], expand=True, size=15),
+                            ft.Text(f"{s['present']} / {s['total']}", size=13, color=ft.Colors.GREY),
+                            ft.Container(content=ft.Text(f"{s['percent']}%", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=color, padding=10, border_radius=20)
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        padding=10, bgcolor=bg, border_radius=8))
             except Exception as ex:
                 a_summary.value = f"Ошибка: {ex}"
             page.update()
 
-
-        # ---- НАСТРОЙКА СКАЧИВАНИЯ ФАЙЛА ----
         save_dialog_admin = ft.FilePicker()
         page.services.append(save_dialog_admin)
 
         async def save_admin_report_file(e):
-            report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ\n"
-            report += f"Программа: {prog_dd.value or 'Все'}\n"
-            report += f"Период: {a_start_date.value or 'Все'} - {a_end_date.value or 'Все'}\n\n"
-            
+            report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ (Период: {admin_period_dd.value} дней)\n"
+            report += f"Программа: {prog_dd.value or 'Все'}\n\n"
             for c in a_list.controls:
                 text_elements = c.content.controls
-                report += f"{text_elements[0].value} | {text_elements[1].value}\n"
+                report += f"{text_elements[0].value} | {text_elements[1].value} | {text_elements[2].content.value}\n"
             
             file_bytes = report.encode("utf-8")
-            await save_dialog_admin.save_file(
-                file_name="Admin_Report.txt",
-                src_bytes=file_bytes
-            )
+            await save_dialog_admin.save_file(file_name="Admin_Report.txt", src_bytes=file_bytes)
 
         screen_stats = ft.Column([
-            ft.Row([prog_dd]), ft.Row([student_search]), ft.Row([a_start_date, a_end_date], spacing=5),
-            ft.Row([ft.Button("Найти", on_click=refresh_admin_stats, expand=True), ft.Button("Скачать", on_click=save_admin_report_file, expand=True)]),
+            ft.Row([prog_dd]), 
+            ft.Row([student_search]), 
+            ft.Row([admin_period_dd]),
+            ft.Row([
+                ft.Button("Найти", on_click=refresh_admin_stats, expand=True), 
+                ft.Button("Скачать", on_click=save_admin_report_file, expand=True)
+            ]),
             ft.Divider(), a_summary, a_list
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
+       
         content_area = ft.Container(content=screen_students, expand=True, padding=10)
         
         def change_tab(e):
