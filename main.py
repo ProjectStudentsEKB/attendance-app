@@ -819,8 +819,10 @@ async def main(page: ft.Page):
 
         async def do_reset(sid):
             if await asyncio.to_thread(db.reset_student_device, sid):
-                page.show_dialog(ft.SnackBar(ft.Text("Сброшено!")))
-                await refresh_students()
+                page.show_dialog(ft.SnackBar(ft.Text("Устройство успешно сброшено!"), bgcolor=ft.Colors.GREEN))
+                await refresh_students() # <--- ВОТ ЭТА СТРОКА ОБНОВИТ СПИСОК И ГАЛОЧКИ
+            else:
+                page.show_dialog(ft.SnackBar(ft.Text("Ошибка сброса. Проверьте базу."), bgcolor=ft.Colors.RED))
 
         search_field.on_change = lambda e: page.run_task(refresh_students)
         screen_students = ft.Column([ft.Row([search_field, ft.IconButton(ft.Icons.REFRESH, on_click=lambda e: page.run_task(refresh_students))]), students_list], scroll=ft.ScrollMode.AUTO, expand=True)
