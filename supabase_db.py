@@ -419,3 +419,33 @@ def get_teacher_custom_stats(teacher_id, group_id=None, student_id=None, days=30
     except Exception as e:
         print(f"Ошибка: {e}")
         return [], 0
+
+def get_admin_custom_stats(program=None, student_name=None, days=30):
+    from datetime import datetime, timedelta
+    try:
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        query = supabase.table("lessons").select("id, groups(program)").gte("created_at", start_date)
+        lessons = query.execute()
+        
+        valid_lesson_ids = []
+        for l in lessons.data:
+            if program and l.get("groups") and l["groups"]["program"] != program: continue
+            valid_lesson_ids.append(l["id"])
+            
+        if not valid_lesson_ids: return [], 0
+        
+        attendance = supabase.table("attendance").select("student_id, users(full_name)").in_("lesson_id", valid_lesson_ids).execute()
+        
+        stats = {}
+        for a in attendance.data:
+            if not a["users"]: continue
+            name = a["users"]["full_name"]
+            if student_name and student_name.lower() not in name.lower(): continue
+            if name not in stats: stats[name] = 0
+            stats[name] += 1
+            
+        result = [{"full_name": k, "present": v, "total": len(valid_lesson_ids), "percent": round(v/len(valid_lesson_ids)*100, 1)} for k, v in stats.items()]
+        return sorted(result, key=lambda x: x["percent"], reverse=True), len(valid_lesson_ids)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return [], 0
