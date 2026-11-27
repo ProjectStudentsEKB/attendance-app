@@ -9,11 +9,11 @@ def make_lesson_token(lesson_id):
     return f"{lesson_id}:{int(time.time())}"
 
 
-def make_qr_base64(data, size=8):
+def make_qr_base64(data, size=12):
     """Генерирует QR-код и возвращает base64-строку PNG."""
     qr = segno.make(data, error="m")
     buf = io.BytesIO()
-    qr.save(buf, kind="png", scale=size, border=2)
+    qr.save(buf, kind="png", scale=size, border=4)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("ascii")
 
