@@ -702,7 +702,7 @@ async def main(page: ft.Page):
                 page.update()
                 try:
                     picture = await camera.take_picture()
-                    image = Image.open(io.BytesIO(picture))
+                    image = Image.open(io.BytesIO(picture)).convert('L') # Переводим в черно-белый
                     decoded_objects = decode(image)
                     
                     if not decoded_objects:
