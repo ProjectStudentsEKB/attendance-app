@@ -420,16 +420,17 @@ def get_teacher_custom_stats(teacher_id, group_id=None, student_id=None, days=30
         print(f"Ошибка: {e}")
         return [], 0
 
-def get_admin_custom_stats(program=None, student_name=None, days=30):
+def get_admin_custom_stats(program=None, group_id=None, student_name=None, days=30):
     from datetime import datetime, timedelta
     try:
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        query = supabase.table("lessons").select("id, groups(program)").gte("created_at", start_date)
+        query = supabase.table("lessons").select("id, group_id, groups(program)").gte("created_at", start_date)
         lessons = query.execute()
         
         valid_lesson_ids = []
         for l in lessons.data:
             if program and l.get("groups") and l["groups"]["program"] != program: continue
+            if group_id and l["group_id"] != group_id: continue
             valid_lesson_ids.append(l["id"])
             
         if not valid_lesson_ids: return [], 0
