@@ -812,9 +812,19 @@ async def main(page: ft.Page):
                 students = await asyncio.to_thread(db.get_all_students_for_admin, query)
                 for s in students:
                     device_status = "✅" if s.get("device_id") else "❌"
+                    reset_count = s.get("device_reset_count", 0)
                     group_name = s["groups"]["name"] if s.get("groups") else "Нет группы"
-                    students_list.controls.append(ft.Container(content=ft.Row([ft.Text(s["full_name"], expand=True), ft.Text(f"({group_name})"), ft.Text(f"Тел: {device_status}"), ft.Button("Сбросить", on_click=lambda e, sid=s["id"]: page.run_task(do_reset, sid))])))
-            except: pass
+                    
+                    students_list.controls.append(ft.Container(
+                        content=ft.Column([
+                            ft.Row([ft.Text(s["full_name"], expand=True, weight=ft.FontWeight.BOLD), ft.Text(f"({group_name})", color=ft.Colors.GREY, size=12)]),
+                            ft.Row([
+                                ft.Text(f"Тел: {device_status} | Сбросов: {reset_count}", size=12, color=ft.Colors.RED if reset_count > 0 else ft.Colors.GREY),
+                                ft.Button("Сбросить", on_click=lambda e, sid=s["id"]: page.run_task(do_reset, sid), height=30)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                        ]), padding=10, bgcolor=ft.Colors.BLUE_50, border_radius=8))
+            except Exception as e:
+                students_list.controls.append(ft.Text(f"Ошибка: {e}", color=ft.Colors.RED))
             page.update()
 
         async def do_reset(sid):
@@ -831,9 +841,11 @@ async def main(page: ft.Page):
         prog_dd = ft.Dropdown(label="Программа", expand=True, options=[ft.DropdownOption(key="", text="Все программы")])
         for p in db.get_all_programs(): prog_dd.options.append(ft.DropdownOption(key=p, text=p))
         
+        group_dd = ft.Dropdown(label="Группа", expand=True, options=[ft.DropdownOption(key="", text="Все группы")])
+        for g in db.get_groups(): group_dd.options.append(ft.DropdownOption(key=g["id"], text=g["name"]))
+
         student_search = ft.TextField(label="Студент (ФИО)", expand=True)
         
-        # Вместо дат делаем периоды
         admin_period_dd = ft.Dropdown(label="Период", expand=True, value="30", options=[
             ft.dropdown.Option(key="7", text="Последняя неделя"),
             ft.dropdown.Option(key="30", text="Последний месяц"),
@@ -856,10 +868,11 @@ async def main(page: ft.Page):
             page.update()
             try:
                 prog = prog_dd.value if prog_dd.value else None
+                gid = group_dd.value if group_dd.value else None
                 stud = student_search.value.strip() if student_search.value else None
                 days = int(admin_period_dd.value)
                 
-                stats, total = await asyncio.to_thread(db.get_admin_custom_stats, prog, stud, days)
+                stats, total = await asyncio.to_thread(db.get_admin_custom_stats, prog, gid, stud, days)
                 
                 if total == 0:
                     a_summary.value = "Нет данных за выбранный период."
@@ -881,12 +894,22 @@ async def main(page: ft.Page):
                 a_summary.value = f"Ошибка: {ex}"
             page.update()
 
+        def clear_admin_stats(e):
+            prog_dd.value = ""
+            group_dd.value = ""
+            student_search.value = ""
+            admin_period_dd.value = "30"
+            a_list.controls.clear()
+            a_summary.value = ""
+            page.update()
+
         save_dialog_admin = ft.FilePicker()
         page.services.append(save_dialog_admin)
 
         async def save_admin_report_file(e):
             report = f"🏛️ ГЛОБАЛЬНЫЙ ОТЧЕТ (Период: {admin_period_dd.value} дней)\n"
-            report += f"Программа: {prog_dd.value or 'Все'}\n\n"
+            report += f"Программа: {prog_dd.value or 'Все'}\n"
+            report += f"Группа: {group_dd.value or 'Все'}\n\n"
             for c in a_list.controls:
                 text_elements = c.content.controls
                 report += f"{text_elements[0].value} | {text_elements[1].value} | {text_elements[2].content.value}\n"
@@ -896,10 +919,12 @@ async def main(page: ft.Page):
 
         screen_stats = ft.Column([
             ft.Row([prog_dd]), 
+            ft.Row([group_dd]),
             ft.Row([student_search]), 
             ft.Row([admin_period_dd]),
             ft.Row([
                 ft.Button("Найти", on_click=refresh_admin_stats, expand=True), 
+                ft.Button("Сброс", on_click=clear_admin_stats, expand=True),
                 ft.Button("Скачать", on_click=save_admin_report_file, expand=True)
             ]),
             ft.Divider(), a_summary, a_list
